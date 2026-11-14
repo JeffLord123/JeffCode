@@ -1,0 +1,153 @@
+name: JeffCode Release
+
+on:
+  push:
+    tags:
+      - 'jeffcode-*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+  VSCODE_SKIP_PRELAUNCH: '1'
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-2025
+    timeout-minutes: 240
+    env:
+      VSCODE_ARCH: x64
+      npm_config_arch: x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Setup pnpm
+        uses: ./.github/actions/setup-pnpm
+
+      - name: Install dependencies
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for ($i = 1; $i -le 5; $i++) {
+            pnpm install --frozen-lockfile
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($i -eq 5) { throw 'pnpm install failed too many times' }
+          }
+
+      - name: Build and package
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pnpm gulp vscode-win32-x64-min
+          if ($LASTEXITCODE -ne 0) { throw 'package failed' }
+          pnpm gulp vscode-win32-x64-inno-updater
+          if ($LASTEXITCODE -ne 0) { throw 'inno updater failed' }
+          pnpm gulp vscode-win32-x64-user-setup
+          if ($LASTEXITCODE -ne 0) { throw 'setup failed' }
+
+      - name: Collect files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $setup = Get-ChildItem .build/win32-x64 -Recurse -Filter *.exe | Where-Object { $_.FullName -match 'user-setup' } | Select-Object -First 1
+          if (-not $setup) { throw 'user setup exe not found' }
+          Copy-Item $setup.FullName dist/JeffCode-Setup-win32-x64.exe
+          Compress-Archive -Path ../VSCode-win32-x64/* -DestinationPath dist/JeffCode-win32-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jeffcode-win32-x64
+          path: dist/*
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+    env:
+      VSCODE_ARCH: ${{ matrix.arch }}
+      npm_config_arch: ${{ matrix.arch }}
+      GYP_DEFINES: "kerberos_use_rtld=false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Setup pnpm
+        uses: ./.github/actions/setup-pnpm
+
+      - name: Install dependencies
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          python3 -m pip install --break-system-packages setuptools
+          for i in 1 2 3 4 5; do
+            pnpm install --frozen-lockfile && break
+            if [ $i -eq 5 ]; then echo "pnpm install failed too many times" >&2; exit 1; fi
+          done
+
+      - name: Build and package
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm gulp vscode-darwin-${{ matrix.arch }}-min
+
+      - name: Ad-hoc sign and zip
+        run: |
+          set -e
+          APP="../VSCode-darwin-${{ matrix.arch }}/JeffCode.app"
+          codesign --force --deep --sign - "$APP"
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "dist/JeffCode-darwin-${{ matrix.arch }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jeffcode-darwin-${{ matrix.arch }}
+          path: dist/*
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/jeffcode-')
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat > notes.md <<'EOF'
+          ## Install
+
+          **Windows:** run `JeffCode-Setup-win32-x64.exe`. Windows SmartScreen may warn (unsigned app): click "More info" then "Run anyway".
+
+          **macOS:** unzip `JeffCode-darwin-arm64.zip` (Apple Silicon) or `JeffCode-darwin-x64.zip` (Intel), move `JeffCode.app` to Applications, then run once in Terminal:
+
+              xattr -cr /Applications/JeffCode.app
+
+          (the app is not notarized by Apple).
+          EOF
+          gh release create "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --notes-file notes.md

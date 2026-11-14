@@ -488,4 +488,7 @@ import './contrib/editTelemetry/browser/editTelemetry.contribution.js';
 // Opener
 import './contrib/opener/browser/opener.contribution.js';
 
+// JeffCode
+import './contrib/jeffcode/browser/jeffcode.contribution.js';
+
 //#endregion
