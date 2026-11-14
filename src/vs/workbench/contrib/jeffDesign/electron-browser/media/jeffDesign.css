@@ -1,0 +1,594 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) JeffCode contributors. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.jeff-design-host {
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	box-sizing: border-box;
+	border-left: 1px solid var(--vscode-panel-border, var(--vscode-widget-border, transparent));
+	background: var(--vscode-sideBar-background);
+	color: var(--vscode-sideBar-foreground, var(--vscode-foreground));
+	z-index: 1;
+}
+
+.jeff-design-panel {
+	--jeff-design-field: var(--vscode-input-background);
+	--jeff-design-field-border: var(--vscode-input-border, transparent);
+	--jeff-design-muted: var(--vscode-descriptionForeground);
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	font-size: 12px;
+	line-height: 16px;
+	user-select: none;
+}
+
+.jeff-design-panel [hidden] {
+	display: none !important;
+}
+
+.jeff-design-panel button {
+	font: inherit;
+	color: inherit;
+	background: none;
+	border: none;
+	padding: 0;
+	cursor: pointer;
+}
+
+.jeff-design-panel button:disabled {
+	cursor: default;
+	opacity: 0.45;
+}
+
+.jeff-design-panel button:focus-visible,
+.jeff-design-panel input:focus-visible,
+.jeff-design-panel select:focus-visible,
+.jeff-design-tree:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+/* -- Header ---------------------------------------------------------------------------- */
+
+.jeff-design-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 10px 6px 10px;
+	flex: none;
+}
+
+.jeff-design-title {
+	font-weight: 600;
+	font-size: 13px;
+}
+
+.jeff-design-selection {
+	margin-left: auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--jeff-design-muted);
+	font-family: var(--monaco-monospace-font);
+	font-size: 11px;
+}
+
+.jeff-design-icon-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	border-radius: 4px;
+	flex: none;
+}
+
+.jeff-design-panel .jeff-design-icon-button:hover {
+	background: var(--vscode-toolbar-hoverBackground);
+}
+
+.jeff-design-panel .jeff-design-icon-button.active {
+	background: var(--vscode-inputOption-activeBackground);
+	color: var(--vscode-inputOption-activeForeground, inherit);
+}
+
+.jeff-design-icon {
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.2;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	flex: none;
+}
+
+.jeff-design-banner {
+	display: flex;
+	gap: 6px;
+	padding: 6px 10px;
+	background: var(--vscode-inputValidation-warningBackground);
+	border-bottom: 1px solid var(--vscode-inputValidation-warningBorder, transparent);
+	flex: none;
+}
+
+.jeff-design-panel .jeff-design-link {
+	color: var(--vscode-textLink-foreground);
+	text-decoration: underline;
+}
+
+/* -- Components tree ------------------------------------------------------------------- */
+
+.jeff-design-tree {
+	flex: 0 0 30%;
+	min-height: 96px;
+	overflow: auto;
+	padding-bottom: 4px;
+	font-family: var(--monaco-monospace-font);
+	font-size: 12px;
+}
+
+.jeff-design-tree-row {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	height: 22px;
+	padding-right: 8px;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.jeff-design-tree-row:hover {
+	background: var(--vscode-list-hoverBackground);
+}
+
+.jeff-design-tree-row.selected {
+	background: var(--vscode-list-inactiveSelectionBackground);
+}
+
+.jeff-design-tree:focus .jeff-design-tree-row.selected {
+	background: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+.jeff-design-twistie {
+	width: 16px;
+	flex: none;
+	font-size: 14px;
+	color: var(--jeff-design-muted);
+}
+
+.jeff-design-tree-suffix {
+	color: var(--jeff-design-muted);
+}
+
+.jeff-design-tree-text {
+	margin-left: 6px;
+	color: var(--jeff-design-muted);
+	font-family: var(--vscode-font-family);
+	font-style: italic;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.jeff-design-tree-empty {
+	padding: 8px 12px;
+	color: var(--jeff-design-muted);
+	font-family: var(--vscode-font-family);
+}
+
+/* -- Tabs ------------------------------------------------------------------------------ */
+
+.jeff-design-tabs {
+	display: flex;
+	gap: 2px;
+	padding: 6px 8px;
+	border-top: 1px solid var(--vscode-panel-border, var(--vscode-widget-border, transparent));
+	flex: none;
+}
+
+.jeff-design-panel .jeff-design-tab {
+	padding: 3px 10px;
+	border-radius: 4px;
+	font-size: 13px;
+	color: var(--jeff-design-muted);
+}
+
+.jeff-design-panel .jeff-design-tab:hover {
+	color: inherit;
+}
+
+.jeff-design-panel .jeff-design-tab.active {
+	background: var(--vscode-toolbar-hoverBackground);
+	color: inherit;
+}
+
+/* -- Content --------------------------------------------------------------------------- */
+
+.jeff-design-content {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+
+.jeff-design-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 12px;
+	color: var(--jeff-design-muted);
+}
+
+.jeff-design-empty p {
+	margin: 0;
+}
+
+.jeff-design-section {
+	padding: 6px 12px 10px 12px;
+}
+
+.jeff-design-section.divider {
+	margin-top: 4px;
+	padding-top: 10px;
+	border-top: 1px solid var(--vscode-panel-border, var(--vscode-widget-border, transparent));
+}
+
+.jeff-design-section-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	min-height: 22px;
+	margin-bottom: 4px;
+}
+
+.jeff-design-section-title,
+.jeff-design-label {
+	font-size: 11px;
+	font-weight: 600;
+}
+
+.jeff-design-section.divider .jeff-design-section-title {
+	font-size: 13px;
+}
+
+.jeff-design-label {
+	margin: 8px 0 4px 0;
+}
+
+.jeff-design-section-body {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.jeff-design-row {
+	display: grid;
+	grid-auto-flow: column;
+	grid-auto-columns: minmax(0, 1fr);
+	gap: 8px;
+}
+
+.jeff-design-individual,
+.jeff-design-flow-extras {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+/* -- Fields ---------------------------------------------------------------------------- */
+
+.jeff-design-field {
+	display: flex;
+	align-items: center;
+	height: 26px;
+	min-width: 0;
+	box-sizing: border-box;
+	border: 1px solid var(--jeff-design-field-border);
+	border-radius: 4px;
+	background: var(--jeff-design-field);
+	color: var(--vscode-input-foreground);
+}
+
+.jeff-design-field:focus-within {
+	border-color: var(--vscode-focusBorder);
+}
+
+.jeff-design-field-handle {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 100%;
+	flex: none;
+	color: var(--jeff-design-muted);
+	cursor: ew-resize;
+	touch-action: none;
+}
+
+.jeff-design-field-handle.static {
+	cursor: default;
+}
+
+.jeff-design-field.scrubbing .jeff-design-field-handle,
+.jeff-design-field-handle:hover {
+	color: inherit;
+}
+
+.jeff-design-panel .jeff-design-input {
+	flex: 1 1 auto;
+	min-width: 0;
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	padding: 0 6px;
+	border: none;
+	outline: none;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	user-select: text;
+}
+
+.jeff-design-field-handle + .jeff-design-input {
+	padding-left: 0;
+}
+
+.jeff-design-panel select.jeff-design-input,
+.jeff-design-panel .jeff-design-unit {
+	appearance: none;
+	border: none;
+	outline: none;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+
+.jeff-design-panel select.jeff-design-input option,
+.jeff-design-panel .jeff-design-unit option {
+	background: var(--vscode-dropdown-background);
+	color: var(--vscode-dropdown-foreground);
+}
+
+.jeff-design-select {
+	position: relative;
+}
+
+.jeff-design-select::after {
+	content: '';
+	position: absolute;
+	right: 9px;
+	top: 9px;
+	width: 5px;
+	height: 5px;
+	border-right: 1px solid var(--jeff-design-muted);
+	border-bottom: 1px solid var(--jeff-design-muted);
+	transform: rotate(45deg);
+	pointer-events: none;
+}
+
+.jeff-design-panel .jeff-design-unit {
+	flex: none;
+	max-width: 58px;
+	height: 100%;
+	padding: 0 6px 0 2px;
+	color: var(--jeff-design-muted);
+	text-align: right;
+}
+
+.jeff-design-unit-label {
+	flex: none;
+	padding-right: 8px;
+	color: var(--jeff-design-muted);
+}
+
+.jeff-design-swatch {
+	position: relative;
+	width: 14px;
+	height: 14px;
+	margin: 0 6px 0 7px;
+	flex: none;
+	border-radius: 3px;
+	border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.5));
+	background:
+		conic-gradient(rgba(128, 128, 128, 0.45) 25%, transparent 0 50%, rgba(128, 128, 128, 0.45) 0 75%, transparent 0) 0 0 / 8px 8px;
+	overflow: hidden;
+}
+
+.jeff-design-swatch-fill {
+	position: absolute;
+	inset: 0;
+}
+
+.jeff-design-panel .jeff-design-swatch-picker {
+	position: absolute;
+	inset: -4px;
+	width: 24px;
+	height: 24px;
+	opacity: 0;
+	cursor: pointer;
+}
+
+.jeff-design-panel .jeff-design-alpha {
+	flex: 0 0 38px;
+	padding: 0 2px 0 6px;
+	border-left: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
+	text-align: right;
+}
+
+.jeff-design-segments {
+	display: grid;
+	grid-auto-flow: column;
+	grid-auto-columns: minmax(0, 1fr);
+	gap: 4px;
+}
+
+.jeff-design-panel .jeff-design-segment {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 26px;
+	border-radius: 4px;
+	background: var(--jeff-design-field);
+	border: 1px solid var(--jeff-design-field-border);
+	color: var(--jeff-design-muted);
+}
+
+.jeff-design-panel .jeff-design-segment:hover {
+	color: inherit;
+}
+
+.jeff-design-panel .jeff-design-segment.active {
+	background: var(--vscode-inputOption-activeBackground);
+	border-color: var(--vscode-inputOption-activeBorder, transparent);
+	color: var(--vscode-inputOption-activeForeground, inherit);
+}
+
+.jeff-design-checkbox {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	height: 22px;
+	cursor: pointer;
+}
+
+.jeff-design-checkbox input {
+	margin: 0;
+	accent-color: var(--vscode-button-background);
+}
+
+/* -- CSS tab --------------------------------------------------------------------------- */
+
+.jeff-design-css {
+	padding: 4px 0 8px 0;
+	font-family: var(--monaco-monospace-font);
+	font-size: 12px;
+	user-select: text;
+}
+
+.jeff-design-css-block {
+	padding: 6px 12px;
+	border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-widget-border, transparent));
+}
+
+.jeff-design-css-header {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.jeff-design-css-selector {
+	word-break: break-all;
+}
+
+.jeff-design-css-source {
+	flex: none;
+	color: var(--jeff-design-muted);
+}
+
+.jeff-design-css-declaration {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding-left: 12px;
+	min-height: 20px;
+}
+
+.jeff-design-css-name {
+	flex: none;
+	color: var(--vscode-symbolIcon-propertyForeground, var(--vscode-textLink-foreground));
+}
+
+.jeff-design-panel .jeff-design-css-value,
+.jeff-design-panel .jeff-design-css-new-name {
+	flex: 1 1 auto;
+	min-width: 0;
+	height: 18px;
+	padding: 0 3px;
+	border: 1px solid transparent;
+	border-radius: 2px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+}
+
+.jeff-design-panel .jeff-design-css-new-name {
+	flex: 0 0 96px;
+}
+
+.jeff-design-panel .jeff-design-css-value:hover,
+.jeff-design-panel .jeff-design-css-new-name:hover,
+.jeff-design-panel .jeff-design-css-value:focus,
+.jeff-design-panel .jeff-design-css-new-name:focus {
+	border-color: var(--jeff-design-field-border, var(--vscode-focusBorder));
+	background: var(--jeff-design-field);
+}
+
+.jeff-design-panel .jeff-design-css-remove {
+	flex: none;
+	width: 18px;
+	height: 18px;
+	font-size: 12px;
+	border-radius: 3px;
+	color: var(--jeff-design-muted);
+	visibility: hidden;
+}
+
+.jeff-design-css-declaration:hover .jeff-design-css-remove,
+.jeff-design-css-remove:focus-visible {
+	visibility: visible;
+}
+
+/* -- Footer ---------------------------------------------------------------------------- */
+
+.jeff-design-footer {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 10px;
+	border-top: 1px solid var(--vscode-panel-border, var(--vscode-widget-border, transparent));
+	flex: none;
+}
+
+.jeff-design-changes {
+	margin-right: auto;
+	white-space: nowrap;
+	color: var(--jeff-design-muted);
+}
+
+.jeff-design-changes.warning {
+	color: var(--vscode-editorWarning-foreground);
+}
+
+.jeff-design-footer-actions {
+	display: flex;
+	gap: 6px;
+}
+
+.jeff-design-panel .jeff-design-button {
+	height: 24px;
+	padding: 0 9px;
+	border-radius: 4px;
+	white-space: nowrap;
+	background: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-button-secondaryForeground);
+}
+
+.jeff-design-panel .jeff-design-button:hover:not(:disabled) {
+	background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.jeff-design-panel .jeff-design-button.primary {
+	background: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+}
+
+.jeff-design-panel .jeff-design-button.primary:hover:not(:disabled) {
+	background: var(--vscode-button-hoverBackground);
+}

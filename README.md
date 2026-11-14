@@ -6,7 +6,7 @@ It keeps everything VS Code does and focuses on visual front-end work:
 - Integrated browser with element selection, DevTools and console
 - Extensions from [Open VSX](https://open-vsx.org)
 - [Claude Code](https://code.claude.com/docs/en/vs-code) as the agent (offered on first launch)
-- Coming next: a Figma-like Design panel (Components tree, layout, spacing, typography, colors) with Apply-to-code
+- Design panel beside the page: Components tree, Figma-like controls for layout, spacing, typography and colors, live preview, and an Apply button that hands the changes to Claude Code
 
 Upstream's original README is kept in [README.vscode.md](README.vscode.md).
 
@@ -22,6 +22,15 @@ Download the latest build from [Releases](https://github.com/JeffLord123/JeffCod
   ```
 
 JeffCode stores its settings and extensions in `~/.jeffcode`, separate from VS Code and Cursor.
+
+## Design panel
+
+Open a page in the integrated browser (`Ctrl+Shift+P`, "Open Integrated Browser"), then use the two buttons at the right of the address bar:
+
+- **Design Panel** opens the panel beside the page.
+- **Select Element to Design** (`Ctrl+Shift+C`) lets you click an element in the page.
+
+Edit values in the **Design** or **CSS** tab: the page updates live. Drag a field's icon sideways to scrub a value, or use the arrow keys (Shift for steps of 10). The bar at the bottom counts your changes: **Reset** undoes them, **Copy CSS** copies them as CSS, **Apply** opens Claude Code with a ready-to-send prompt describing them so it can update the source code.
 
 ## Claude Code
 

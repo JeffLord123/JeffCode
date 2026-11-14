@@ -175,6 +175,9 @@ import './contrib/webview/electron-browser/webview.contribution.js';
 
 // Browser
 import './contrib/browserView/electron-browser/browserView.contribution.js';
+
+// JeffCode: Design panel for the integrated browser
+import './contrib/jeffDesign/electron-browser/jeffDesign.contribution.js';
 import './contrib/canvases/electron-browser/editorCanvases.contribution.js';
 
 // Splash
