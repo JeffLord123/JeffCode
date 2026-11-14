@@ -604,7 +604,8 @@ BUILD_TARGETS.forEach(buildTarget => {
 			compileNativeExtensionsBuildTask,
 			util.rimraf(path.join(buildRoot, destinationFolderName)),
 			packageTask(platform, arch, sourceFolderName, destinationFolderName, opts),
-			prepareCopilotRipgrepShimTask(platform, arch, destinationFolderName)
+			// JeffCode: the built-in Copilot extension is not shipped, so its ripgrep shim step is skipped
+			// (prepareCopilotRipgrepShimTask needs Copilot SDK files only present in Microsoft's internal build).
 		];
 
 		if (platform === 'win32') {
@@ -631,7 +632,7 @@ BUILD_TARGETS.forEach(buildTarget => {
 			copyCodiconsTask,
 			cleanExtensionsBuildTask,
 			compileNonNativeExtensionsBuildTask,
-			compileCopilotExtensionBuildTask,
+			// JeffCode: compileCopilotExtensionBuildTask removed, built-in Copilot is not shipped
 			compileExtensionMediaBuildTask,
 			writeISODate('out-build'),
 			esbuildBundleTask,
