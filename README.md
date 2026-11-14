@@ -36,6 +36,15 @@ Edit values in the **Design** or **CSS** tab: the page updates live. Drag a fiel
 
 On first launch JeffCode offers to install the Claude Code extension. You can also install it from the Extensions view (search "Claude Code", publisher Anthropic). Sign in with your Claude account.
 
+## WSL and SSH
+
+Microsoft's Remote extensions only run in Microsoft's VS Code. JeffCode supports their open-source counterparts from Open VSX instead:
+
+- **WSL:** install "Open Remote - WSL" (`jeanp413.open-remote-wsl`), then click the remote button at the bottom left of the window and pick your distribution.
+- **SSH:** install "Open Remote - SSH" (`jeanp413.open-remote-ssh`).
+
+On first connection the extension downloads the JeffCode server (`jeffcode-reh-linux-x64.tar.gz`) from the GitHub release that matches the app, so the app and the server must come from the same release. The server is built on Ubuntu 24.04 and needs glibc 2.39 or later on the Linux side.
+
 ## Build from source
 
 Requirements: Node.js version from [.nvmrc](.nvmrc), pnpm version from `packageManager` in [package.json](package.json), Python 3, and on Windows Visual Studio Build Tools 2022 with the C++ workload and Spectre-mitigated libraries.

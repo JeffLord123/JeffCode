@@ -14,7 +14,63 @@ env:
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
   VSCODE_SKIP_PRELAUNCH: '1'
 
+# Every job writes the release number (the tag without its "jeffcode-" prefix) into product.json as
+# "release". The app and the remote server must agree on it: the WSL and SSH extensions download the
+# server from serverDownloadUrlTemplate, which points at the assets of that release.
+
 jobs:
+  linux-server:
+    name: Linux server x64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      VSCODE_ARCH: x64
+      npm_config_arch: x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Setup pnpm
+        uses: ./.github/actions/setup-pnpm
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libkrb5-dev libxkbfile-dev libsecret-1-dev libx11-dev pkg-config
+
+      - name: Stamp release
+        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('product.json','utf8'));p.release=process.argv[1];fs.writeFileSync('product.json',JSON.stringify(p,null,'\t'))" "${GITHUB_REF_NAME#jeffcode-}"
+
+      - name: Install dependencies
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          for i in 1 2 3 4 5; do
+            pnpm install --frozen-lockfile && break
+            if [ $i -eq 5 ]; then echo "pnpm install failed too many times" >&2; exit 1; fi
+          done
+
+      - name: Build server
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm gulp vscode-reh-linux-x64-min
+
+      - name: Archive
+        run: |
+          set -e
+          test -x ../vscode-reh-linux-x64/bin/jeffcode-server
+          mkdir -p dist
+          tar -czf dist/jeffcode-reh-linux-x64.tar.gz -C .. vscode-reh-linux-x64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jeffcode-reh-linux-x64
+          path: dist/*
+
   windows:
     name: Windows x64
     runs-on: windows-2025
@@ -31,6 +87,10 @@ jobs:
 
       - name: Setup pnpm
         uses: ./.github/actions/setup-pnpm
+
+      - name: Stamp release
+        shell: bash
+        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('product.json','utf8'));p.release=process.argv[1];fs.writeFileSync('product.json',JSON.stringify(p,null,'\t'))" "${GITHUB_REF_NAME#jeffcode-}"
 
       - name: Install dependencies
         shell: pwsh
@@ -98,6 +158,9 @@ jobs:
       - name: Setup pnpm
         uses: ./.github/actions/setup-pnpm
 
+      - name: Stamp release
+        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('product.json','utf8'));p.release=process.argv[1];fs.writeFileSync('product.json',JSON.stringify(p,null,'\t'))" "${GITHUB_REF_NAME#jeffcode-}"
+
       - name: Install dependencies
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -130,7 +193,7 @@ jobs:
   release:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/jeffcode-')
-    needs: [windows, macos]
+    needs: [linux-server, windows, macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -152,5 +215,7 @@ jobs:
               xattr -cr /Applications/JeffCode.app
 
           (the app is not notarized by Apple).
+
+          **WSL:** install the "Open Remote - WSL" extension (jeanp413.open-remote-wsl) from the Extensions view. JeffCode downloads its server for WSL (`jeffcode-reh-linux-x64.tar.gz`) from this release automatically.
           EOF
           gh release create "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --notes-file notes.md

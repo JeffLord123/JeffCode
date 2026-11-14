@@ -11,8 +11,9 @@
 	"serverGreeting": [],
 	"serverLicense": [],
 	"serverLicensePrompt": "",
-	"serverApplicationName": "code-server-oss",
-	"serverDataFolderName": ".vscode-server-oss",
+	"serverApplicationName": "jeffcode-server",
+	"serverDataFolderName": ".jeffcode-server",
+	"serverDownloadUrlTemplate": "https://github.com/JeffLord123/JeffCode/releases/download/jeffcode-${release}/jeffcode-reh-${os}-${arch}.tar.gz",
 	"tunnelApplicationName": "code-tunnel-oss",
 	"win32DirName": "JeffCode",
 	"win32NameVersion": "JeffCode",
@@ -37,6 +38,16 @@
 		"itemUrl": "https://open-vsx.org/vscode/item",
 		"latestUrlTemplate": "https://open-vsx.org/vscode/gallery/{publisher}/{name}/latest",
 		"controlUrl": "https://raw.githubusercontent.com/EclipseFdn/publish-extensions/refs/heads/master/extension-control/extensions.json"
+	},
+	"extensionEnabledApiProposals": {
+		"jeanp413.open-remote-wsl": [
+			"resolvers",
+			"contribViewsRemote"
+		],
+		"jeanp413.open-remote-ssh": [
+			"resolvers",
+			"contribViewsRemote"
+		]
 	},
 	"linkProtectionTrustedDomains": [
 		"https://open-vsx.org"

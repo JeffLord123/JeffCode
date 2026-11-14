@@ -543,7 +543,8 @@ function prepareCopilotRipgrepShimTaskREH(platform: string, arch: string, destin
 				task.task(`node-${platform}-${arch}`) as task.Task,
 				util.rimraf(path.join(BUILD_ROOT, destinationFolderName)),
 				packageTask(type, platform, arch, sourceFolderName, destinationFolderName),
-				prepareCopilotRipgrepShimTaskREH(platform, arch, destinationFolderName)
+				// JeffCode: the built-in Copilot extension is not shipped, so its ripgrep shim step is skipped
+				// (prepareCopilotRipgrepShimTaskREH needs Copilot SDK files only present in Microsoft's internal build).
 			];
 
 			if (platform === 'win32') {
@@ -558,7 +559,7 @@ function prepareCopilotRipgrepShimTaskREH(platform: string, arch: string, destin
 				compileApiProposalNamesTask,
 				cleanExtensionsBuildTask,
 				compileNonNativeExtensionsBuildTask,
-				compileCopilotExtensionBuildTask,
+				// JeffCode: compileCopilotExtensionBuildTask removed, built-in Copilot is not shipped
 				compileExtensionMediaBuildTask,
 				writeISODate('out-build'),
 				minified ? esbuildBundleMinTask : esbuildBundleTask,
