@@ -5,6 +5,9 @@
 $NodeDir = if ($env:JEFFCODE_NODE_DIR) { $env:JEFFCODE_NODE_DIR } else { 'C:\tools\node-v24.22.1-win-x64' }
 $PnpmDir = if ($env:JEFFCODE_PNPM_DIR) { $env:JEFFCODE_PNPM_DIR } else { 'C:\tools\pnpm-12' }
 $env:Path = "$PnpmDir;$NodeDir;" + $env:Path
+# Packaging (patchWin32DependenciesTask) runs signtool.exe from the Windows SDK; add the newest one.
+$SignTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+if ($SignTool) { $env:Path = "$($SignTool.DirectoryName);" + $env:Path }
 # Terminals inside VS Code/Cursor inherit ELECTRON_RUN_AS_NODE=1 and VSCODE_* variables,
 # which make Electron start as plain Node and crash JeffCode at launch. Clear them.
 Get-ChildItem env: | Where-Object Name -match '^(ELECTRON_RUN_AS_NODE|VSCODE_)' | ForEach-Object { Remove-Item "env:$($_.Name)" }
