@@ -312,7 +312,9 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration)
 			[VerifyExtensionSignatureConfigKey]: {
 				type: 'boolean',
 				description: localize('extensions.verifySignature', "When enabled, extensions are verified to be signed before getting installed."),
-				default: true,
+				// JeffCode: off by default. The verifier is a Microsoft binary absent from Code - OSS builds,
+				// and Open VSX extensions are not signed with Microsoft's key, so every install would fail.
+				default: false,
 				scope: ConfigurationScope.APPLICATION,
 				included: isNative
 			},
