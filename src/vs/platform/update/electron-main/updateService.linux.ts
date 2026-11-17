@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { CancellationToken } from '../../../base/common/cancellation.js';
+import { isMacintosh } from '../../../base/common/platform.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { IEnvironmentMainService } from '../../environment/electron-main/environmentMainService.js';
 import { ILifecycleMainService } from '../../lifecycle/electron-main/lifecycleMainService.js';
@@ -11,11 +12,11 @@ import { ILogService } from '../../log/common/log.js';
 import { IMeteredConnectionService } from '../../meteredConnection/common/meteredConnection.js';
 import { INativeHostMainService } from '../../native/electron-main/nativeHostMainService.js';
 import { IProductService } from '../../product/common/productService.js';
-import { asJson, IRequestService } from '../../request/common/request.js';
+import { IRequestService } from '../../request/common/request.js';
 import { IApplicationStorageMainService } from '../../storage/electron-main/storageMainService.js';
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
-import { AvailableForDownload, IUpdate, State, StateType, UpdateType } from '../common/update.js';
-import { AbstractUpdateService, createUpdateURL, IUpdateURLOptions } from './abstractUpdateService.js';
+import { AvailableForDownload, State, StateType, UpdateType } from '../common/update.js';
+import { AbstractUpdateService, IUpdateURLOptions } from './abstractUpdateService.js';
 
 export class LinuxUpdateService extends AbstractUpdateService {
 
@@ -35,7 +36,8 @@ export class LinuxUpdateService extends AbstractUpdateService {
 	}
 
 	protected buildUpdateFeedUrl(quality: string, commit: string, options?: IUpdateURLOptions): string {
-		return createUpdateURL(this.productService.updateUrl!, `linux-${process.arch}`, quality, commit, options);
+		// macOS builds that cannot install updates themselves use this service with a static feed to announce them.
+		return this.createUpdateFeedUrl(`${isMacintosh ? 'darwin' : 'linux'}-${process.arch}`, quality, commit, options);
 	}
 
 	protected doCheckForUpdates(explicit: boolean, _pendingCommit?: string): void {
@@ -48,8 +50,7 @@ export class LinuxUpdateService extends AbstractUpdateService {
 		const url = this.buildUpdateFeedUrl(this.quality, this.productService.commit!, { background, internalOrg });
 		this.setState(State.CheckingForUpdates(explicit));
 
-		this.requestService.request({ url, callSite: 'updateService.linux.checkForUpdates' }, CancellationToken.None)
-			.then<IUpdate | null>(asJson)
+		this.requestUpdate(url, this.productService.commit!, 'updateService.linux.checkForUpdates', CancellationToken.None)
 			.then(update => {
 				// If updates were disabled mid-check, ignore the result so we don't leave the Disabled state.
 				if (this.state.type !== StateType.CheckingForUpdates) {

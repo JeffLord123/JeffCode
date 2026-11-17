@@ -17,7 +17,7 @@ import { IEnvironmentMainService } from '../../environment/electron-main/environ
 import { ILifecycleMainService, LifecycleMainPhase } from '../../lifecycle/electron-main/lifecycleMainService.js';
 import { ILogService } from '../../log/common/log.js';
 import { IProductService } from '../../product/common/productService.js';
-import { IRequestService } from '../../request/common/request.js';
+import { asJson, IRequestService } from '../../request/common/request.js';
 import { StorageScope, StorageTarget } from '../../storage/common/storage.js';
 import { IApplicationStorageMainService } from '../../storage/electron-main/storageMainService.js';
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
@@ -443,7 +443,56 @@ export abstract class AbstractUpdateService extends Disposable implements IUpdat
 	}
 
 	private getProductQuality(updateMode: string): string | undefined {
-		return updateMode === 'none' ? undefined : this.productService.quality;
+		if (updateMode === 'none') {
+			return undefined;
+		}
+
+		// A static feed only ever describes one release line, so it does not need a product quality.
+		return this.productService.quality ?? (this.isStaticUpdateFeed ? 'stable' : undefined);
+	}
+
+	/** Whether the update URL serves static update metadata (see {@link IProductConfiguration.updateFeed}). */
+	protected get isStaticUpdateFeed(): boolean {
+		return this.productService.updateFeed === 'static';
+	}
+
+	/**
+	 * Builds the URL that describes the update for `platform`: a per-commit query to the update server, or the
+	 * static `update-<platform>.json` file of the latest release.
+	 */
+	protected createUpdateFeedUrl(platform: string, quality: string, commit: string, options?: IUpdateURLOptions): string {
+		if (this.isStaticUpdateFeed) {
+			return new URL(`${this.productService.updateUrl}/update-${platform}.json`).toString();
+		}
+
+		return createUpdateURL(this.productService.updateUrl!, platform, quality, commit, options);
+	}
+
+	/**
+	 * Requests the update metadata at `url` and returns the update to install over `commit`, or `null` when there
+	 * is none. An update server already answers with no content when `commit` is current. A static feed always
+	 * describes the latest release, so that release only counts when it differs from `commit` and, when checking
+	 * against the running build, is newer than it.
+	 */
+	protected async requestUpdate(url: string, commit: string, callSite: string, token: CancellationToken, headers?: Record<string, string>): Promise<IUpdate | null> {
+		const context = await this.requestService.request({ url, headers, callSite }, token);
+		const update = await asJson<IUpdate>(context);
+
+		if (!update || !this.isStaticUpdateFeed) {
+			return update;
+		}
+
+		if (update.version === commit) {
+			return null;
+		}
+
+		const buildTime = commit === this.productService.commit && this.productService.date ? Date.parse(this.productService.date) : NaN;
+		if (update.timestamp && !isNaN(buildTime) && update.timestamp <= buildTime) {
+			this.logService.info('update#requestUpdate - the latest release is not newer than this build', update.version);
+			return null;
+		}
+
+		return update;
 	}
 
 	private scheduleCheckForUpdates(delay = 60 * 60 * 1000, repeat = true): void {
@@ -672,6 +721,10 @@ export abstract class AbstractUpdateService extends Disposable implements IUpdat
 		this.logService.trace('update#isLatestVersion() - checking update server', { url, headers });
 
 		try {
+			if (this.isStaticUpdateFeed) {
+				return !await this.requestUpdate(url, commit ?? this.productService.commit!, 'updateService.isLatestVersion', token, headers);
+			}
+
 			const context = await this.requestService.request({ url, headers, callSite: 'updateService.isLatestVersion' }, token);
 			const statusCode = context.res.statusCode;
 			this.logService.trace('update#isLatestVersion() - response', { statusCode });

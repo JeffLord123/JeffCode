@@ -30,11 +30,11 @@ import { ILogService } from '../../log/common/log.js';
 import { IMeteredConnectionService } from '../../meteredConnection/common/meteredConnection.js';
 import { INativeHostMainService } from '../../native/electron-main/nativeHostMainService.js';
 import { IProductService } from '../../product/common/productService.js';
-import { asJson, IRequestService } from '../../request/common/request.js';
+import { IRequestService } from '../../request/common/request.js';
 import { IApplicationStorageMainService } from '../../storage/electron-main/storageMainService.js';
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
 import { AvailableForDownload, DisablementReason, IUpdate, State, StateType, UpdateType } from '../common/update.js';
-import { AbstractUpdateService, createUpdateURL, getUpdateRequestHeaders, IUpdateURLOptions, UpdateErrorClassification } from './abstractUpdateService.js';
+import { AbstractUpdateService, getUpdateRequestHeaders, IUpdateURLOptions, UpdateErrorClassification } from './abstractUpdateService.js';
 import { getRelaunchArguments } from './updateRelaunchArguments.js';
 import { getWin32UpdateType } from './win32UpdateType.js';
 
@@ -62,8 +62,13 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 	private readonly updatingMutexName: string;
 	private readonly setupMutexName: string;
 
+	/** Names the update cache and installer files; builds without a product quality fall back to the application name. */
+	private get updateQuality(): string {
+		return this.productService.quality ?? this.productService.applicationName;
+	}
+
 	private get cachePathSync(): string {
-		return path.join(tmpdir(), `vscode-${this.productService.quality}-${this.productService.target}-${process.arch}`);
+		return path.join(tmpdir(), `vscode-${this.updateQuality}-${this.productService.target}-${process.arch}`);
 	}
 
 	@memoize
@@ -205,7 +210,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		});
 	}
 
-	protected buildUpdateFeedUrl(quality: string, commit: string, options?: IUpdateURLOptions): string | undefined {
+	protected buildUpdateFeedUrl(quality: string, commit: string, options?: IUpdateURLOptions): string {
 		let platform = `win32-${process.arch}`;
 
 		if (this.getUpdateType() === UpdateType.Archive) {
@@ -214,7 +219,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 			platform += '-user';
 		}
 
-		return createUpdateURL(this.productService.updateUrl!, platform, quality, commit, options);
+		return this.createUpdateFeedUrl(platform, quality, commit, options);
 	}
 
 	protected doCheckForUpdates(explicit: boolean, pendingCommit?: string): void {
@@ -237,8 +242,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		const token = cts.token;
 
 		const headers = getUpdateRequestHeaders(this.productService.version);
-		const promise = this.requestService.request({ url, headers, callSite: 'updateService.win32.checkForUpdates' }, token)
-			.then<IUpdate | null>(asJson)
+		const promise = this.requestUpdate(url, pendingCommit ?? this.productService.commit!, 'updateService.win32.checkForUpdates', token, headers)
 			.then(update => {
 				const updateType = this.getUpdateType();
 
@@ -381,13 +385,13 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 
 	private async getUpdatePackagePath(version: string): Promise<string> {
 		const cachePath = await this.cachePath;
-		return path.join(cachePath, `CodeSetup-${this.productService.quality}-${version}.exe`);
+		return path.join(cachePath, `CodeSetup-${this.updateQuality}-${version}.exe`);
 	}
 
 	private async cleanup(exceptVersion: string | null = null): Promise<void> {
 		const relaunchArgumentsFileName = exceptVersion ? `${RELAUNCH_ARGUMENTS_FILE_PREFIX}${exceptVersion}` : undefined;
 		const filter = exceptVersion
-			? (one: string) => one !== relaunchArgumentsFileName && !(new RegExp(`${this.productService.quality}-${exceptVersion}\\.exe$`).test(one))
+			? (one: string) => one !== relaunchArgumentsFileName && !(new RegExp(`${this.updateQuality}-${exceptVersion}\\.exe$`).test(one))
 			: () => true;
 
 		const cachePath = await this.cachePath;
@@ -414,7 +418,7 @@ export class Win32UpdateService extends AbstractUpdateService implements IRelaun
 		const sessionEndFlagPath = path.join(cachePath, 'session-ending.flag');
 		const cancelFilePath = path.join(cachePath, `cancel.flag`);
 		const progressFilePath = path.join(cachePath, `update-progress`);
-		this.availableUpdate.updateFilePath = path.join(cachePath, `CodeSetup-${this.productService.quality}-${update.version}.flag`);
+		this.availableUpdate.updateFilePath = path.join(cachePath, `CodeSetup-${this.updateQuality}-${update.version}.flag`);
 		this.availableUpdate.cancelFilePath = cancelFilePath;
 
 		const mutex = await this.mutex;

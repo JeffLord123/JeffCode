@@ -6,6 +6,7 @@
 import assert from 'assert';
 import * as sinon from 'sinon';
 import { DeferredPromise, timeout } from '../../../../base/common/async.js';
+import { bufferToStream, VSBuffer } from '../../../../base/common/buffer.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
@@ -94,6 +95,10 @@ class TestUpdateService extends AbstractUpdateService {
 		this._downloadCount++;
 	}
 
+	requestUpdateFor(commit: string): Promise<IUpdate | null> {
+		return this.requestUpdate(this.feedUrl!, commit, 'test', CancellationToken.None);
+	}
+
 	checkLatestVersionExplicitly(): Promise<boolean | undefined> {
 		return this.doIsLatestVersion();
 	}
@@ -144,7 +149,7 @@ suite('AbstractUpdateService', () => {
 	let requestCount: number;
 	let meteredConnectionService: TestMeteredConnectionService;
 
-	function createService(mode: string, options?: { isBuilt?: boolean; disableUpdates?: boolean; updateUrl?: string; isConnectionMetered?: boolean; meteredConnectionInitialization?: Promise<void>; postInitializeGate?: Promise<void>; supportsUpdateOverwrite?: boolean }): TestUpdateService {
+	function createService(mode: string, options?: { isBuilt?: boolean; disableUpdates?: boolean; updateUrl?: string; isConnectionMetered?: boolean; meteredConnectionInitialization?: Promise<void>; postInitializeGate?: Promise<void>; supportsUpdateOverwrite?: boolean; updateFeed?: 'static'; noQuality?: boolean; date?: string; feedResponse?: IUpdate }): TestUpdateService {
 		configurationService = new PolicyTestConfigurationService();
 		configurationService.setUserConfiguration('update.mode', mode);
 		requestCount = 0;
@@ -164,14 +169,19 @@ suite('AbstractUpdateService', () => {
 		const requestService = {
 			request: () => {
 				requestCount++;
+				if (options?.feedResponse) {
+					return Promise.resolve({ res: { statusCode: 200, headers: {} }, stream: bufferToStream(VSBuffer.fromString(JSON.stringify(options.feedResponse))) });
+				}
 				return Promise.reject(new Error('not expected'));
 			}
 		} as unknown as IRequestService;
 
 		const productService = {
 			updateUrl: options?.updateUrl ?? 'https://update.example',
+			updateFeed: options?.updateFeed,
 			commit: 'abc123',
-			quality: 'stable',
+			quality: options?.noQuality ? undefined : 'stable',
+			date: options?.date,
 			version: '1.0.0',
 			target: 'user'
 		} as unknown as IProductService;
@@ -244,6 +254,30 @@ suite('AbstractUpdateService', () => {
 		await setPolicy(service, 'none');
 
 		assert.deepStrictEqual(service.state, { type: StateType.Disabled, reason: DisablementReason.Policy });
+	});
+
+	test('static feed enables updates without a product quality', async () => {
+		const service = createService('default', { updateFeed: 'static', noQuality: true });
+		await service.whenInitialized;
+
+		assert.strictEqual(service.state.type, StateType.Idle);
+	});
+
+	test('static feed offers the latest release only when it is a newer build', async () => {
+		const buildTime = Date.parse('2026-11-01T00:00:00.000Z');
+		const check = async (feedResponse: IUpdate, commit = 'abc123') => {
+			const service = createService('default', { updateFeed: 'static', date: '2026-11-01T00:00:00.000Z', feedResponse });
+			return (await service.requestUpdateFor(commit))?.version ?? null;
+		};
+
+		assert.deepStrictEqual([
+			await check({ version: 'abc123', productVersion: '0.4.0', timestamp: buildTime + 1, url: 'u' }),
+			await check({ version: 'def456', productVersion: '0.4.0', timestamp: buildTime + 1, url: 'u' }),
+			await check({ version: 'def456', productVersion: '0.4.0', timestamp: buildTime - 1, url: 'u' }),
+			await check({ version: 'def456', productVersion: '0.4.0', url: 'u' }),
+			await check({ version: 'def456', productVersion: '0.4.0', timestamp: buildTime - 1, url: 'u' }, 'pending'),
+			await check({ version: 'pending', productVersion: '0.4.0', timestamp: buildTime + 1, url: 'u' }, 'pending'),
+		], [null, 'def456', null, 'def456', 'def456', null]);
 	});
 
 	test('switching to none at runtime cancels and disables', async () => {

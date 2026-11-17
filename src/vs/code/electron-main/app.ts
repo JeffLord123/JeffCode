@@ -1247,7 +1247,12 @@ export class CodeApplication extends Disposable {
 				break;
 
 			case 'darwin':
-				services.set(IUpdateService, new SyncDescriptor(DarwinUpdateService));
+				// Squirrel.Mac only installs updates into a signed app; with a static feed, announce updates for download instead.
+				if (this.productService.updateFeed === 'static') {
+					services.set(IUpdateService, new SyncDescriptor(LinuxUpdateService));
+				} else {
+					services.set(IUpdateService, new SyncDescriptor(DarwinUpdateService));
+				}
 				break;
 		}
 

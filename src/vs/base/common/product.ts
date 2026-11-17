@@ -127,6 +127,12 @@ export interface IProductConfiguration {
 
 	readonly downloadUrl?: string;
 	readonly updateUrl?: string;
+	/**
+	 * How {@link updateUrl} serves updates. `server` (the default) is an update server that answers per build
+	 * commit. `static` is a folder of `update-<platform>.json` files that always describe the latest release,
+	 * such as the assets of the latest GitHub release.
+	 */
+	readonly updateFeed?: 'server' | 'static';
 	readonly webUrl?: string;
 	readonly webEndpointUrlTemplate?: string;
 	readonly webviewContentExternalBaseUrlTemplate?: string;

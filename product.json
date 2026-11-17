@@ -33,6 +33,9 @@
 	"linuxIconName": "jeffcode",
 	"licenseFileName": "LICENSE.txt",
 	"reportIssueUrl": "https://github.com/JeffLord123/JeffCode/issues/new",
+	"downloadUrl": "https://github.com/JeffLord123/JeffCode/releases/latest",
+	"updateUrl": "https://github.com/JeffLord123/JeffCode/releases/latest/download",
+	"updateFeed": "static",
 	"extensionsGallery": {
 		"serviceUrl": "https://open-vsx.org/vscode/gallery",
 		"itemUrl": "https://open-vsx.org/vscode/item",

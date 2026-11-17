@@ -201,6 +201,29 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # JeffCode reads these files from the latest release (product.json "updateFeed": "static") to find
+      # updates. "version" is the build commit; the app ignores the feed when it matches its own commit.
+      - name: Write update feed
+        run: |
+          set -e
+          base="https://github.com/${GITHUB_REPOSITORY}/releases"
+          release="${GITHUB_REF_NAME#jeffcode-}"
+          timestamp="$(date +%s)000"
+          setup=dist/JeffCode-Setup-win32-x64.exe
+          test -f "$setup"
+          jq -n --arg version "$GITHUB_SHA" --arg productVersion "$release" --argjson timestamp "$timestamp" \
+            --arg url "$base/download/${GITHUB_REF_NAME}/JeffCode-Setup-win32-x64.exe" \
+            --arg sha256hash "$(sha256sum "$setup" | cut -d' ' -f1)" \
+            '{version: $version, productVersion: $productVersion, timestamp: $timestamp, url: $url, sha256hash: $sha256hash}' \
+            > dist/update-win32-x64-user.json
+          for arch in arm64 x64; do
+            jq -n --arg version "$GITHUB_SHA" --arg productVersion "$release" --argjson timestamp "$timestamp" \
+              --arg url "$base/tag/${GITHUB_REF_NAME}" \
+              '{version: $version, productVersion: $productVersion, timestamp: $timestamp, url: $url}' \
+              > "dist/update-darwin-${arch}.json"
+          done
+          cat dist/update-*.json
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -215,6 +238,8 @@ jobs:
               xattr -cr /Applications/JeffCode.app
 
           (the app is not notarized by Apple).
+
+          **Updates:** JeffCode checks this page for new releases. On Windows it downloads and installs them in the background, then offers to restart; on macOS it offers to open the download page.
 
           **WSL:** install the "Open Remote - WSL" extension (jeanp413.open-remote-wsl) from the Extensions view. JeffCode downloads its server for WSL (`jeffcode-reh-linux-x64.tar.gz`) from this release automatically.
           EOF
