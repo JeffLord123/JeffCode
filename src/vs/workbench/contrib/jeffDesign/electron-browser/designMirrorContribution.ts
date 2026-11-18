@@ -14,7 +14,7 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { IBrowserViewModel } from '../../browserView/common/browserView.js';
 import { BrowserEditorInput } from '../../browserView/common/browserEditorInput.js';
 import { BrowserEditor, BrowserEditorContribution, BrowserWidgetLocation, IBrowserEditorWidget } from '../../browserView/electron-browser/browserEditor.js';
-import { IDesignMirrorService } from './designMirrorService.js';
+import { IDesignMirrorService, IDesignMirrorSide } from './designMirrorService.js';
 
 /**
  * What Mirror Mode shows in a browser editor that takes part in it: the progress (or failure) of
@@ -105,9 +105,11 @@ class BrowserEditorMirrorContribution extends BrowserEditorContribution {
 			this._placeholder.classList.toggle('failed', failed);
 			this._title.textContent = failed
 				? localize('jeffDesign.mirror.placeholderFailed', "Mirror Mode could not start")
-				: localize('jeffDesign.mirror.placeholderPreparing', "Preparing the last commit…");
+				: side.pinned
+					? localize('jeffDesign.mirror.placeholderPreparingChosen', "Preparing the chosen commit…")
+					: localize('jeffDesign.mirror.placeholderPreparing', "Preparing the last commit…");
 			this._detail.textContent = (failed ? side.message : side.step) ?? '';
-			this._revision.textContent = side.revision ? localize('jeffDesign.mirror.placeholderRevision', "Last commit {0}", side.revision) : '';
+			this._revision.textContent = side.revision ? revisionLabel(side) : '';
 			this._addressButton.style.display = failed ? '' : 'none';
 		}
 
@@ -121,15 +123,32 @@ class BrowserEditorMirrorContribution extends BrowserEditorContribution {
 		this._badge.classList.toggle('head', side.side === 'head');
 		this._badge.classList.toggle('failed', failed);
 		if (side.side === 'head') {
-			this._badgeLabel.textContent = localize('jeffDesign.mirror.badgeHead', "Last commit {0}", side.revision ?? '');
+			this._badgeLabel.textContent = revisionLabel(side);
 			this._badgeTooltip = failed && side.message
 				? side.message
-				: localize('jeffDesign.mirror.badgeHeadTooltip', "Mirror Mode: this side runs your site as it is in the last commit.");
+				: side.pinned
+					? localize('jeffDesign.mirror.badgeChosenTooltip', "Mirror Mode: this side runs your site as it is in the chosen commit. Choose another one from the arrow of the Mirror Mode button.")
+					: localize('jeffDesign.mirror.badgeHeadTooltip', "Mirror Mode: this side runs your site as it is in the last commit.");
 		} else {
-			this._badgeLabel.textContent = localize('jeffDesign.mirror.badgeWorking', "Uncommitted");
-			this._badgeTooltip = localize('jeffDesign.mirror.badgeWorkingTooltip', "Mirror Mode: this side shows your site with your uncommitted changes.");
+			this._badgeLabel.textContent = side.pinned
+				? localize('jeffDesign.mirror.badgeWorkingPinned', "Working copy")
+				: localize('jeffDesign.mirror.badgeWorking', "Uncommitted");
+			this._badgeTooltip = side.pinned
+				? localize('jeffDesign.mirror.badgeWorkingPinnedTooltip', "Mirror Mode: this side shows your site as it is in your files now.")
+				: localize('jeffDesign.mirror.badgeWorkingTooltip', "Mirror Mode: this side shows your site with your uncommitted changes.");
 		}
 	}
+}
+
+/** `Last commit abc1234`, or for a chosen commit `main abc1234` / `Commit abc1234`. */
+function revisionLabel(side: IDesignMirrorSide): string {
+	const revision = side.revision ?? '';
+	if (!side.pinned) {
+		return localize('jeffDesign.mirror.badgeHead', "Last commit {0}", revision);
+	}
+	return side.refName
+		? localize('jeffDesign.mirror.badgeRef', "{0} {1}", side.refName, revision)
+		: localize('jeffDesign.mirror.badgeCommit', "Commit {0}", revision);
 }
 
 BrowserEditor.registerContribution(BrowserEditorMirrorContribution);

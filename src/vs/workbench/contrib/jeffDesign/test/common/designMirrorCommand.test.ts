@@ -13,6 +13,7 @@ import {
 	installCommand,
 	isLocalDevUrl,
 	isPortPrompt,
+	isSafeGitRef,
 	lineMentionsPort,
 	mapMirrorUrl,
 	MirrorPackageManager,
@@ -364,6 +365,13 @@ suite('JeffDesign - designMirrorCommand', () => {
 			'if [ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]; then . "${NVM_DIR:-$HOME/.nvm}/nvm.sh" >/dev/null 2>&1; fi; pnpm dev',
 			'pnpm dev',
 		]);
+	});
+
+	test('isSafeGitRef', () => {
+		assert.deepStrictEqual(
+			['main', 'origin/feature/x', 'v1.2.0', 'a1b2c3d', 'HEAD~2', 'main^{commit}', '-x', 'a..b', 'a b', 'a;rm', '$(x)', ''].map(isSafeGitRef),
+			[true, true, true, true, true, false, false, false, false, false, false, false],
+		);
 	});
 
 	test('sanitizeFolderName and extractShellCommand', () => {

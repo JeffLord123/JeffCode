@@ -733,6 +733,14 @@ export function withNodeVersionManager(os: MirrorShellOs, commandLine: string, n
 	return `if [ -s ${script} ]; then . ${script} >/dev/null 2>&1;${use} fi; ${commandLine}`;
 }
 
+/**
+ * Whether a commit hash, branch or tag typed by the user can be passed to git as a revision: the
+ * characters of git ref names, no option (`-x`) and no range (`a..b`).
+ */
+export function isSafeGitRef(ref: string): boolean {
+	return /^[\w./@~^-]+$/.test(ref) && !ref.startsWith('-') && !ref.includes('..') && ref.length <= 250;
+}
+
 /** A folder name made of safe characters only, e.g. `My-Site` for `My Site!`. */
 export function sanitizeFolderName(name: string): string {
 	const sanitized = name

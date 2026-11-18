@@ -70,6 +70,29 @@ class ToggleMirrorSyncScrollAction extends Action2 {
 	}
 }
 
+class ChooseMirrorCommitAction extends Action2 {
+	constructor() {
+		super({
+			id: 'jeffcode.design.mirror.chooseCommit',
+			title: localize2('jeffDesign.mirrorChooseCommit', "Choose Mirror Commit..."),
+			metadata: { description: localize2('jeffDesign.mirrorChooseCommitDescription', "Choose the commit, branch or tag shown on the left in Mirror Mode") },
+			category: BrowserActionCategory,
+			icon: Codicon.gitCommit,
+			f1: true,
+			precondition: CONTEXT_DESIGN_MIRROR_ACTIVE,
+			menu: {
+				id: JeffDesignMirrorMenu,
+				group: '0_mirror',
+				order: 1,
+			},
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		await accessor.get(IDesignMirrorService).chooseCommit();
+	}
+}
+
 class ShowMirrorTerminalAction extends Action2 {
 	constructor() {
 		super({
@@ -112,6 +135,7 @@ class ChangeMirrorCommandAction extends Action2 {
 }
 
 registerAction2(ToggleMirrorAction);
+registerAction2(ChooseMirrorCommitAction);
 registerAction2(ToggleMirrorSyncScrollAction);
 registerAction2(ShowMirrorTerminalAction);
 registerAction2(ChangeMirrorCommandAction);

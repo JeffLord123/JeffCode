@@ -6,6 +6,7 @@
 import { disposableTimeout } from '../../../../base/common/async.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { Codicon } from '../../../../base/common/codicons.js';
+import { fromNow } from '../../../../base/common/date.js';
 import { toErrorMessage } from '../../../../base/common/errorMessage.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { stringHash } from '../../../../base/common/hash.js';
@@ -25,7 +26,7 @@ import { createDecorator } from '../../../../platform/instantiation/common/insta
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { INativeHostService } from '../../../../platform/native/common/native.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
-import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
+import { IQuickInputService, IQuickPickItem, IQuickPickSeparator } from '../../../../platform/quickinput/common/quickInput.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { TerminalCapability } from '../../../../platform/terminal/common/capabilities/capabilities.js';
 import { editorBackground, editorForeground } from '../../../../platform/theme/common/colorRegistry.js';
@@ -49,6 +50,7 @@ import {
 	installCommand,
 	isLocalDevUrl,
 	isPortPrompt,
+	isSafeGitRef,
 	lineMentionsPort,
 	mapMirrorUrl,
 	MIRROR_LOCKFILES,
@@ -75,8 +77,12 @@ export interface IDesignMirrorSide {
 	readonly step?: string;
 	/** Localized error or hint, when failed. */
 	readonly message?: string;
-	/** Short hash of the last commit. */
+	/** Short hash of the commit shown on the left. */
 	readonly revision?: string;
+	/** The left side keeps a commit chosen by the user instead of following the last commit. */
+	readonly pinned?: boolean;
+	/** Branch or tag the chosen commit was picked from. */
+	readonly refName?: string;
 }
 
 /**
@@ -99,6 +105,8 @@ export interface IDesignMirrorService {
 	showServerTerminal(): Promise<void>;
 	/** Asks for the start command again, remembers it, and restarts the server of a running session. */
 	changeStartCommand(): Promise<void>;
+	/** Asks which commit the left side shows: the last commit (following new ones), a branch, a tag or any commit. */
+	chooseCommit(): Promise<void>;
 	/** When the address of the copy was not detected: asks for it and shows it. */
 	enterUrlManually(): Promise<void>;
 
@@ -158,6 +166,10 @@ interface IMirrorSession {
 	busy: boolean;
 	/** Set while waiting for the copy's server to show its address: starts it again instead. */
 	restartServerWait: (() => void) | undefined;
+	/** Set when the user chose the commit: the copy no longer follows new commits. */
+	pinned: { readonly refName: string | undefined } | undefined;
+	/** Updates the cover of the right side. */
+	updateCover: (() => void) | undefined;
 }
 
 const commandStorageKey = (repoRoot: URI) => `jeffDesign.mirror.command:${repoRoot.toString()}`;
@@ -228,11 +240,13 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 			return undefined;
 		}
 		const revision = session.revision.slice(0, 7);
+		const pinned = !!session.pinned;
+		const refName = session.pinned?.refName;
 		if (browserViewId === session.headId) {
-			return { side: 'head', status: session.status, step: session.step, message: session.message, revision };
+			return { side: 'head', status: session.status, step: session.step, message: session.message, revision, pinned, refName };
 		}
 		if (browserViewId === session.workingModel.id) {
-			return { side: 'working', status: session.status, revision };
+			return { side: 'working', status: session.status, revision, pinned, refName };
 		}
 		return undefined;
 	}
@@ -300,6 +314,90 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 			await this._restartServer(session);
 		}
 		// Otherwise the copy is being prepared: its server starts with the new command.
+	}
+
+	async chooseCommit(): Promise<void> {
+		const session = this._session;
+		if (!session) {
+			return;
+		}
+		interface ICommitPick extends IQuickPickItem {
+			/** Undefined: the last commit, following new ones. */
+			readonly target?: { readonly ref: string; readonly refName: string | undefined };
+			readonly enter?: true;
+		}
+		const historyProvider = session.repository.provider.historyProvider.get();
+		const [refs, commits] = await Promise.all([
+			historyProvider?.provideHistoryItemRefs().catch(() => undefined),
+			historyProvider?.provideHistoryItems({ historyItemRefs: [historyProvider.historyItemRef.get()?.id ?? 'HEAD'], limit: 50 }).catch(() => undefined),
+		]);
+		if (session !== this._session) {
+			return;
+		}
+		const items: (ICommitPick | IQuickPickSeparator)[] = [
+			{
+				label: `$(history) ${localize('jeffDesign.mirror.pickLast', "Last Commit")}`,
+				description: localize('jeffDesign.mirror.pickLastDescription', "Follows new commits"),
+				picked: !session.pinned,
+			},
+			{ label: `$(edit) ${localize('jeffDesign.mirror.pickEnter', "Enter a Commit, Branch or Tag...")}`, enter: true },
+		];
+		if (refs?.length) {
+			items.push({ type: 'separator', label: localize('jeffDesign.mirror.pickRefs', "Branches and Tags") });
+			for (const ref of refs.filter(ref => ref.revision || isSafeGitRef(ref.name))) {
+				const tag = ref.category?.toLowerCase().includes('tag');
+				items.push({ label: `$(${tag ? 'tag' : 'git-branch'}) ${ref.name}`, description: ref.category, target: { ref: ref.revision ?? ref.name, refName: ref.name } });
+			}
+		}
+		if (commits?.length) {
+			items.push({ type: 'separator', label: localize('jeffDesign.mirror.pickCommits', "Recent Commits") });
+			for (const commit of commits) {
+				const id = commit.displayId ?? commit.id.slice(0, 7);
+				const when = commit.timestamp ? fromNow(commit.timestamp, true) : undefined;
+				items.push({ label: `$(git-commit) ${commit.subject}`, description: [id, commit.author, when].filter(Boolean).join(' · '), target: { ref: commit.id, refName: undefined } });
+			}
+		}
+		const choice = await this._quickInputService.pick(items, {
+			placeHolder: localize('jeffDesign.mirror.pickPlaceholder', "Commit to show on the left"),
+			matchOnDescription: true,
+		});
+		if (!choice || session !== this._session) {
+			return;
+		}
+		let target = choice.target;
+		if (choice.enter) {
+			const value = await this._quickInputService.input({
+				prompt: localize('jeffDesign.mirror.enterRefPrompt', "Commit hash, branch or tag to show on the left"),
+				placeHolder: 'main, v1.2.0, a1b2c3d',
+				validateInput: async text => isSafeGitRef(text.trim()) ? undefined : localize('jeffDesign.mirror.invalidRef', "Enter a commit hash, a branch or a tag"),
+			});
+			if (!value || session !== this._session) {
+				return;
+			}
+			target = { ref: value.trim(), refName: /^[0-9a-f]{7,64}$/i.test(value.trim()) ? undefined : value.trim() };
+		}
+
+		let revision: string;
+		if (target) {
+			const resolved = /^[0-9a-f]{40,64}$/i.test(target.ref) ? target.ref : await this._revParse(session, `${target.ref}^{commit}`);
+			if (!resolved) {
+				this._notificationService.notify({ severity: Severity.Warning, message: localize('jeffDesign.mirror.refNotFound', "No commit named {0} in this repository.", target.ref) });
+				return;
+			}
+			revision = resolved;
+		} else {
+			revision = historyProvider?.historyItemRef.get()?.revision ?? await this._resolveHead(session);
+		}
+		if (session !== this._session) {
+			return;
+		}
+		session.pinned = target ? { refName: target.refName } : undefined;
+		session.updateCover?.();
+		this._onDidChange.fire();
+		if (revision !== session.revision) {
+			session.pendingRevision = revision;
+			await this._followHead(session);
+		}
 	}
 
 	async enterUrlManually(): Promise<void> {
@@ -403,6 +501,8 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 			pendingRevision: undefined,
 			busy: true,
 			restartServerWait: undefined,
+			pinned: undefined,
+			updateCover: undefined,
 		};
 		this._session = session;
 		this._sessionStore.value = store;
@@ -427,6 +527,10 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 		}
 		session.busy = false;
 		this._watchHead(session);
+		if (session.pendingRevision) {
+			// A commit was chosen while the copy was starting.
+			void this._followHead(session);
+		}
 	}
 
 	/** Opens the last commit's tab in a new editor group to the left of the page. */
@@ -482,7 +586,9 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 	// -- Worktree ----------------------------------------------------------------------------
 
 	private async _prepareWorktree(session: IMirrorSession): Promise<void> {
-		this._setStep(session, localize('jeffDesign.mirror.stepCheckout', "Copying the last commit…"));
+		this._setStep(session, session.pinned
+			? localize('jeffDesign.mirror.stepCheckoutChosen', "Copying the chosen commit…")
+			: localize('jeffDesign.mirror.stepCheckout', "Copying the last commit…"));
 		await this._fileService.createFolder(dirname(session.worktree));
 		await this._fileService.writeFile(session.logFile, VSBuffer.fromString(''));
 		const repo = this._quote(session, this._shellPath(session.repoRoot));
@@ -510,15 +616,21 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 	}
 
 	private async _resolveHead(session: IMirrorSession): Promise<string> {
-		const output = joinPath(dirname(session.logFile), `${basename(session.worktree)}.head`);
-		const repo = this._quote(session, this._shellPath(session.repoRoot));
-		const target = this._quote(session, this._shellPath(output));
-		const code = await this._runHidden(session, `git -C ${repo} rev-parse HEAD > ${target}`, session.repoRoot, false);
-		const revision = code === 0 ? (await this._fileService.readFile(output)).value.toString().trim() : '';
-		if (!/^[0-9a-f]{7,64}$/i.test(revision)) {
+		const revision = await this._revParse(session, 'HEAD');
+		if (!revision) {
 			throw new MirrorError(localize('jeffDesign.mirror.noCommit', "This repository has no commit yet: there is no last commit to compare with."));
 		}
 		return revision;
+	}
+
+	/** The full hash of a revision of the repository, or undefined when git does not know it. */
+	private async _revParse(session: IMirrorSession, ref: string): Promise<string | undefined> {
+		const output = joinPath(dirname(session.logFile), `${basename(session.worktree)}.head`);
+		const repo = this._quote(session, this._shellPath(session.repoRoot));
+		const target = this._quote(session, this._shellPath(output));
+		const code = await this._runHidden(session, `git -C ${repo} rev-parse --verify --quiet ${this._quote(session, ref)} > ${target}`, session.repoRoot, false);
+		const revision = code === 0 ? (await this._fileService.readFile(output)).value.toString().trim() : '';
+		return /^[0-9a-f]{7,64}$/i.test(revision) ? revision : undefined;
 	}
 
 	/** Runs a git command, its output going to the log; throws with the end of the log when it fails. */
@@ -845,7 +957,10 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 		session.message = undefined;
 		this._onDidChange.fire();
 		const target = mapMirrorUrl(session.workingModel.url, session.liveOrigin, origin) ?? origin;
-		if (session.headModel) {
+		if (session.headModel?.url === target) {
+			// The server restarted on the same address, with another commit: show it.
+			session.headModel.reload().catch(() => { /* the tab is gone */ });
+		} else if (session.headModel) {
 			this._navigate(session, session.headModel, target);
 		}
 	}
@@ -940,9 +1055,10 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 			if (session !== this._session) {
 				return;
 			}
+			// With a chosen commit, the two sides differ even without uncommitted changes.
 			const changes = provider.groups.reduce((count, group) => count + group.resources.length, 0);
 			const theme = this._themeService.getColorTheme();
-			session.workingOverlay.setCover(changes > 0 ? undefined : {
+			session.workingOverlay.setCover(changes > 0 || session.pinned ? undefined : {
 				title: localize('jeffDesign.mirror.noChangesTitle', "No uncommitted changes"),
 				detail: localize('jeffDesign.mirror.noChangesDetail', "This side shows your uncommitted changes as soon as you edit a file. The left side keeps the last commit."),
 				background: theme.getColor(editorBackground)?.toString() ?? '#ffffff',
@@ -953,6 +1069,7 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 		session.store.add(provider.onDidChangeResourceGroups(update));
 		session.store.add(this._themeService.onDidColorThemeChange(update));
 		session.store.add(toDisposable(() => session.workingOverlay.setCover(undefined)));
+		session.updateCover = update;
 		update();
 	}
 
@@ -961,7 +1078,7 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 		const provider = session.repository.provider;
 		session.store.add(autorun(reader => {
 			const revision = provider.historyProvider.read(reader)?.historyItemRef.read(reader)?.revision;
-			if (revision && revision !== session.revision && session === this._session) {
+			if (revision && revision !== session.revision && session === this._session && !session.pinned) {
 				session.pendingRevision = revision;
 				void this._followHead(session);
 			}
