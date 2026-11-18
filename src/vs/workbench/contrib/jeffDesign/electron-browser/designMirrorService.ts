@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { disposableTimeout } from '../../../../base/common/async.js';
+import { disposableTimeout, timeout } from '../../../../base/common/async.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { fromNow } from '../../../../base/common/date.js';
@@ -45,6 +45,7 @@ import { ITerminalInstance, ITerminalService } from '../../terminal/browser/term
 import {
 	detectPackageManager,
 	extractShellCommand,
+	findPortConflict,
 	findServerUrl,
 	guessStartCommand,
 	installCommand,
@@ -59,6 +60,7 @@ import {
 	projectNodeVersion,
 	quotePosixArg,
 	quoteWindowsArg,
+	replacePortInSource,
 	sanitizeFolderName,
 	shellInvocation,
 	withNodeVersionManager,
@@ -170,6 +172,11 @@ interface IMirrorSession {
 	pinned: { readonly refName: string | undefined } | undefined;
 	/** Updates the cover of the right side. */
 	updateCover: (() => void) | undefined;
+	/**
+	 * Ports written in the project's files that the live server already uses, moved to free ports in
+	 * the copy (and again after each checkout, which restores the files).
+	 */
+	readonly portRewrites: { readonly file: string; readonly from: number; readonly to: number }[];
 }
 
 const commandStorageKey = (repoRoot: URI) => `jeffDesign.mirror.command:${repoRoot.toString()}`;
@@ -503,6 +510,7 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 			restartServerWait: undefined,
 			pinned: undefined,
 			updateCover: undefined,
+			portRewrites: [],
 		};
 		this._session = session;
 		this._sessionStore.value = store;
@@ -695,6 +703,7 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 		}
 
 		this._setStep(session, localize('jeffDesign.mirror.stepServer', "Starting the site of the last commit…"));
+		await this._applyPortRewrites(session);
 		const port = await this._choosePort(session);
 		const packageJson = joinPath(cwd, 'package.json');
 		const scripts = await this._readScripts(packageJson);
@@ -726,6 +735,15 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 				session.serverTerminal = undefined;
 			}
 			terminal.dispose();
+		}));
+
+		// The end of the output tells why the server stopped, e.g. a port of the project that is taken.
+		const output: string[] = [];
+		serverStore.add(terminal.onLineData(line => {
+			output.push(line);
+			if (output.length > 400) {
+				output.shift();
+			}
 		}));
 
 		this._setStep(session, localize('jeffDesign.mirror.stepAddress', "Waiting for the site of the last commit to start…"));
@@ -769,6 +787,14 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 			return this._startServer(session, firstStart);
 		}
 		if (origin === undefined) {
+			// The last lines of output may arrive just after the exit.
+			await timeout(500);
+			if (session !== this._session || session.server.value !== serverStore) {
+				return;
+			}
+			if (await this._movePortOfConflict(session, output, port)) {
+				return this._startServer(session, firstStart);
+			}
 			throw new MirrorError(localize('jeffDesign.mirror.serverStopped', "The site of the last commit stopped. See the terminal \"JeffCode Mirror: last commit\"."));
 		}
 		if (origin === '') {
@@ -810,6 +836,65 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 		} catch {
 			return start;
 		}
+	}
+
+	/**
+	 * When the server stopped because a port written in the project's files is taken (typically by the
+	 * live server, e.g. a proxy on a fixed port), moves that port to a free one in the copy only.
+	 * Resolves whether the server should be started again.
+	 */
+	private async _movePortOfConflict(session: IMirrorSession, output: readonly string[], serverPort: number): Promise<boolean> {
+		const conflict = findPortConflict(output, this._shellPath(session.worktree));
+		if (!conflict || session.portRewrites.length >= 10 || session.portRewrites.some(rewrite => rewrite.to === conflict.port && conflict.files.includes(rewrite.file))) {
+			return false;
+		}
+		const taken = new Set([serverPort, session.livePort, ...session.portRewrites.map(rewrite => rewrite.to)]);
+		let to = conflict.port + 1;
+		while (taken.has(to)) {
+			to++;
+		}
+		if (!session.remote) {
+			try {
+				to = (await this._nativeHostService.findFreePort(to, 100, 1000)) || to;
+			} catch {
+				// Keep the next port.
+			}
+			while (taken.has(to)) {
+				to++;
+			}
+		}
+		const rewrites = conflict.files.map(file => ({ file, from: conflict.port, to }));
+		if (!await this._rewritePorts(session, rewrites)) {
+			return false;
+		}
+		session.portRewrites.push(...rewrites);
+		this._logService.info(`[JeffDesign] Mirror Mode: port ${conflict.port} is taken, the copy uses ${to} in ${conflict.files.join(', ')}`);
+		this._setStep(session, localize('jeffDesign.mirror.stepPortMoved', "Port {0} is already used by your site: the copy uses {1} instead…", conflict.port, to));
+		return true;
+	}
+
+	/** Applies the port rewrites again: a checkout of the copy restores its files. */
+	private async _applyPortRewrites(session: IMirrorSession): Promise<void> {
+		await this._rewritePorts(session, session.portRewrites);
+	}
+
+	/** Rewrites ports in files of the copy; resolves whether a file changed. */
+	private async _rewritePorts(session: IMirrorSession, rewrites: readonly { readonly file: string; readonly from: number; readonly to: number }[]): Promise<boolean> {
+		let changed = false;
+		for (const rewrite of rewrites) {
+			const resource = joinPath(session.worktree, ...rewrite.file.split('/'));
+			try {
+				const source = (await this._fileService.readFile(resource)).value.toString();
+				const updated = replacePortInSource(source, rewrite.from, rewrite.to);
+				if (updated !== source) {
+					await this._fileService.writeFile(resource, VSBuffer.fromString(updated));
+					changed = true;
+				}
+			} catch (error) {
+				this._logService.debug('[JeffDesign] rewriting a port in the mirror failed', error);
+			}
+		}
+		return changed;
 	}
 
 	/**

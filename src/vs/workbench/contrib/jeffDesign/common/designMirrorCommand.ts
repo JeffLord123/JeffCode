@@ -587,6 +587,57 @@ export function isPortPrompt(line: string): boolean {
 	return /\b(?:another|different)\s+port\b/i.test(text) && /\?|\(y\/n\)/i.test(text);
 }
 
+/** A port the copy could not listen on because it is taken, and the files of the project that chose it. */
+export interface IMirrorPortConflict {
+	readonly port: number;
+	/** Paths relative to the copy's root, with `/` separators, outside `node_modules`. */
+	readonly files: readonly string[];
+}
+
+/**
+ * Finds in the output of a server that stopped an `EADDRINUSE` error and, in its stack trace, the
+ * files of the copy (rooted at `root`) that opened the port: e.g. a Vite plugin that starts a proxy
+ * on a fixed port, which the live server already uses.
+ */
+export function findPortConflict(lines: readonly string[], root: string): IMirrorPortConflict | undefined {
+	const normalize = (path: string) => path.replace(/\\/g, '/').replace(/\/+$/, '');
+	const rootPath = normalize(root);
+	const windows = /^[a-z]:/i.test(rootPath);
+	const comparable = (path: string) => windows ? path.toLowerCase() : path;
+	let port: number | undefined;
+	const files: string[] = [];
+	for (const line of lines) {
+		const text = removeAnsiEscapeCodes(line).trim();
+		const error = /EADDRINUSE.*?(?<port>\d{2,5})$/.exec(text);
+		if (port === undefined && error?.groups) {
+			port = Number(error.groups.port);
+		}
+		const frame = /^at\s+(?:.*?\()?(?<location>[^()]+?):\d+:\d+\)?$/.exec(text);
+		if (!frame?.groups) {
+			continue;
+		}
+		let path = frame.groups.location.replace(/^file:\/\//, '');
+		try {
+			path = decodeURIComponent(path);
+		} catch {
+			// Not encoded.
+		}
+		path = normalize(path).replace(/^\/(?=[a-z]:\/)/i, '');
+		if (comparable(path).startsWith(comparable(rootPath) + '/')) {
+			const relative = path.slice(rootPath.length + 1);
+			if (!relative.split('/').includes('node_modules') && !files.includes(relative)) {
+				files.push(relative);
+			}
+		}
+	}
+	return port !== undefined && port > 0 && port < 65536 && files.length ? { port, files } : undefined;
+}
+
+/** Replaces a port number written in source code, as a whole number: `4111` but not `14111` or `4111.5`. */
+export function replacePortInSource(source: string, from: number, to: number): string {
+	return source.replace(new RegExp(`(?<![\\w.])${from}(?![\\w.])`, 'g'), String(to));
+}
+
 /** Whether a line of terminal output mentions a local address with the given port, e.g. `http://localhost:5173/`. */
 export function lineMentionsPort(line: string, port: number): boolean {
 	const text = removeAnsiEscapeCodes(line);

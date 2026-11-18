@@ -8,6 +8,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/tes
 import {
 	detectPackageManager,
 	extractShellCommand,
+	findPortConflict,
 	findServerUrl,
 	guessStartCommand,
 	installCommand,
@@ -21,6 +22,7 @@ import {
 	projectNodeVersion,
 	quotePosixArg,
 	quoteWindowsArg,
+	replacePortInSource,
 	sanitizeFolderName,
 	shellInvocation,
 	withNodeVersionManager,
@@ -365,6 +367,39 @@ suite('JeffDesign - designMirrorCommand', () => {
 			'if [ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]; then . "${NVM_DIR:-$HOME/.nvm}/nvm.sh" >/dev/null 2>&1; fi; pnpm dev',
 			'pnpm dev',
 		]);
+	});
+
+	test('findPortConflict and replacePortInSource', () => {
+		const root = '/Users/me/.jeffcode/mirror/front-abc';
+		const output = [
+			'node:events:487',
+			'Error: listen EADDRINUSE: address already in use :::4111',
+			'    at Server.setupListenHandle [as _listen2] (node:net:2008:16)',
+			`    at generatePlatformProxyConfig (file://${root}/configs/vite-config/src/plugins/proxy.ts:113:10)`,
+			`    at BasicMinimalPluginContext.config (file://${root}/configs/vite-config/src/plugins/proxy.ts:153:36)`,
+			`    at runConfigHook (file://${root}/node_modules/.pnpm/vite@8.3.5/node_modules/vite/dist/node/chunks/node.js:38288:42)`,
+			`    at ${root}/apps/lmp/server%20dev.mjs:4:1`,
+			'  code: \'EADDRINUSE\',',
+			'  port: 4111',
+		];
+		const windowsRoot = 'C:\\Users\\me\\.jeffcode\\mirror\\front-abc';
+		assert.deepStrictEqual([
+			findPortConflict(output, root),
+			findPortConflict(output, `${root}/`),
+			findPortConflict(['Error: listen EADDRINUSE: address already in use 127.0.0.1:3000', '    at file:///c:/Users/me/.jeffcode/mirror/front-abc/server.js:3:5'], windowsRoot),
+			findPortConflict(['Error: listen EADDRINUSE: address already in use :::4111', '    at Server.listen (node:net:2170:7)'], root),
+			findPortConflict([`    at x (${root}/a.ts:1:1)`], root),
+		], [
+			{ port: 4111, files: ['configs/vite-config/src/plugins/proxy.ts', 'apps/lmp/server dev.mjs'] },
+			{ port: 4111, files: ['configs/vite-config/src/plugins/proxy.ts', 'apps/lmp/server dev.mjs'] },
+			{ port: 3000, files: ['server.js'] },
+			undefined,
+			undefined,
+		]);
+		assert.strictEqual(
+			replacePortInSource('const port = 4111; listen(4111); const url = `http://localhost:4111/api`; const other = 14111 + 4111.5;', 4111, 4112),
+			'const port = 4112; listen(4112); const url = `http://localhost:4112/api`; const other = 14111 + 4111.5;',
+		);
 	});
 
 	test('isSafeGitRef', () => {
