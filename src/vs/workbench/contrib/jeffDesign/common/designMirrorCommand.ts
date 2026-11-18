@@ -699,6 +699,40 @@ export function shellInvocation(os: MirrorShellOs, commandLine: string): { reado
 		: { executable: '/bin/sh', args: ['-c', commandLine] };
 }
 
+/** The text of a Node.js version file (`.nvmrc`, `.node-version`): its first line that is not a comment. */
+function versionFileValue(content: string | undefined): string | undefined {
+	const line = content?.split(/\r?\n/).map(text => text.replace(/#.*$/, '').trim()).find(text => text);
+	return line && /^[\w.\-/*]+$/.test(line) ? line : undefined;
+}
+
+/**
+ * The Node.js version a project asks for, as nvm understands it: the content of `.nvmrc`, else of
+ * `.node-version`, else the major version that `engines.node` pins (`24` for `24.22.3` or `^24.1`).
+ * A range open on several majors (`>=20`, `20 || 22`) asks for none.
+ */
+export function projectNodeVersion(files: { readonly nvmrc?: string; readonly nodeVersion?: string; readonly engines?: string }): string | undefined {
+	const fromFile = versionFileValue(files.nvmrc) ?? versionFileValue(files.nodeVersion);
+	if (fromFile) {
+		return fromFile;
+	}
+	const match = /^\s*[\^~=v]*\s*(?<major>\d+)(?:\.(?:\d+|[xX*])){0,2}\s*$/.exec(files.engines ?? '');
+	return match?.groups?.major;
+}
+
+/**
+ * A POSIX command line that first loads nvm when it is installed, and switches to the project's
+ * Node.js version: a terminal started by JeffCode does not read the shell's startup files, where
+ * nvm is usually loaded. Windows command lines are returned as they are (nvm-windows is global).
+ */
+export function withNodeVersionManager(os: MirrorShellOs, commandLine: string, nodeVersion: string | undefined): string {
+	if (os === 'windows') {
+		return commandLine;
+	}
+	const script = '"${NVM_DIR:-$HOME/.nvm}/nvm.sh"';
+	const use = nodeVersion ? ` nvm use ${quotePosixArg(nodeVersion)};` : '';
+	return `if [ -s ${script} ]; then . ${script} >/dev/null 2>&1;${use} fi; ${commandLine}`;
+}
+
 /** A folder name made of safe characters only, e.g. `My-Site` for `My Site!`. */
 export function sanitizeFolderName(name: string): string {
 	const sanitized = name

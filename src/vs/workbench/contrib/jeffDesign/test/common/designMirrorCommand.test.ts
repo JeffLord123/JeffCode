@@ -17,10 +17,12 @@ import {
 	mapMirrorUrl,
 	MirrorPackageManager,
 	planMirrorCommand,
+	projectNodeVersion,
 	quotePosixArg,
 	quoteWindowsArg,
 	sanitizeFolderName,
 	shellInvocation,
+	withNodeVersionManager,
 } from '../../common/designMirrorCommand.js';
 
 suite('JeffDesign - designMirrorCommand', () => {
@@ -338,6 +340,29 @@ suite('JeffDesign - designMirrorCommand', () => {
 		], [
 			{ executable: 'cmd.exe', args: '/d /s /c "npm run dev -- --port 5174"' },
 			{ executable: '/bin/sh', args: ['-c', 'npm run dev -- --port 5174'] },
+		]);
+	});
+
+	test('projectNodeVersion and withNodeVersionManager', () => {
+		assert.deepStrictEqual([
+			projectNodeVersion({ nvmrc: '# comment\n\nv24.16.0\n', engines: '20' }),
+			projectNodeVersion({ nodeVersion: 'lts/iron' }),
+			projectNodeVersion({ engines: '24.22.3' }),
+			projectNodeVersion({ engines: '^22.1' }),
+			projectNodeVersion({ engines: '24.x' }),
+			projectNodeVersion({ engines: '>=20' }),
+			projectNodeVersion({ engines: '20 || 22' }),
+			projectNodeVersion({ nvmrc: 'rm -rf /' }),
+			projectNodeVersion({}),
+		], ['v24.16.0', 'lts/iron', '24', '22', '24', undefined, undefined, undefined, undefined]);
+		assert.deepStrictEqual([
+			withNodeVersionManager('posix', 'pnpm dev lmp', '24'),
+			withNodeVersionManager('posix', 'pnpm dev', undefined),
+			withNodeVersionManager('windows', 'pnpm dev', '24'),
+		], [
+			'if [ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]; then . "${NVM_DIR:-$HOME/.nvm}/nvm.sh" >/dev/null 2>&1; nvm use 24; fi; pnpm dev lmp',
+			'if [ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]; then . "${NVM_DIR:-$HOME/.nvm}/nvm.sh" >/dev/null 2>&1; fi; pnpm dev',
+			'pnpm dev',
 		]);
 	});
 

@@ -54,10 +54,12 @@ import {
 	MIRROR_LOCKFILES,
 	MirrorShellOs,
 	planMirrorCommand,
+	projectNodeVersion,
 	quotePosixArg,
 	quoteWindowsArg,
 	sanitizeFolderName,
 	shellInvocation,
+	withNodeVersionManager,
 } from '../common/designMirrorCommand.js';
 import { DesignPageOverlay, IDesignOverlayService } from './designPageOverlay.js';
 import { CONTEXT_DESIGN_MIRROR_ACTIVE, CONTEXT_DESIGN_MIRROR_SYNC_SCROLL } from './designToolbar.js';
@@ -111,6 +113,8 @@ interface IStartCommand {
 	readonly line: string;
 	/** Folder the command runs in, relative to the repository root; '' for the root. */
 	readonly cwd: string;
+	/** Entered by the user: it wins over the command found in the terminals. */
+	readonly custom?: boolean;
 }
 
 interface IInstallPlan {
@@ -152,6 +156,8 @@ interface IMirrorSession {
 	/** Commit the worktree should move to once the current preparation is done. */
 	pendingRevision: string | undefined;
 	busy: boolean;
+	/** Set while waiting for the copy's server to show its address: starts it again instead. */
+	restartServerWait: (() => void) | undefined;
 }
 
 const commandStorageKey = (repoRoot: URI) => `jeffDesign.mirror.command:${repoRoot.toString()}`;
@@ -287,7 +293,13 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 			return;
 		}
 		session.command = command;
-		await this._restartServer(session);
+		if (session.restartServerWait) {
+			// Still waiting for the previous command's server: start the new one in its place.
+			session.restartServerWait();
+		} else if (!session.busy) {
+			await this._restartServer(session);
+		}
+		// Otherwise the copy is being prepared: its server starts with the new command.
 	}
 
 	async enterUrlManually(): Promise<void> {
@@ -344,7 +356,8 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 		let command: IStartCommand | undefined;
 		if (!fileMode) {
 			const detectedCwd = detected?.cwd && isEqualOrParent(detected.cwd, repoRoot) ? relativePath(repoRoot, detected.cwd) ?? '' : '';
-			command = detected ? { line: detected.command, cwd: detectedCwd } : this._rememberedCommand(repoRoot);
+			const remembered = this._rememberedCommand(repoRoot);
+			command = remembered?.custom ? remembered : detected ? { line: detected.command, cwd: detectedCwd } : remembered;
 			if (!command) {
 				command = await this._askCommand(repoRoot, await this._guessCommand(repoRoot));
 				if (!command) {
@@ -389,6 +402,7 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 			installTerminal: undefined,
 			pendingRevision: undefined,
 			busy: true,
+			restartServerWait: undefined,
 		};
 		this._session = session;
 		this._sessionStore.value = store;
@@ -557,10 +571,11 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 			return;
 		}
 		const cwd = command.cwd ? joinPath(session.worktree, command.cwd) : session.worktree;
+		const nodeVersion = await this._nodeVersion(session, cwd);
 		const install = await this._installPlan(session, cwd);
 		let installed = false;
 		if (install && !await this._dependenciesUpToDate(install)) {
-			await this._install(session, install);
+			await this._install(session, install, nodeVersion);
 			installed = true;
 		}
 		if (session !== this._session) {
@@ -578,7 +593,7 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 
 		const serverStore = new DisposableStore();
 		session.server.value = serverStore;
-		const invocation = shellInvocation(session.os, plan.commandLine);
+		const invocation = shellInvocation(session.os, withNodeVersionManager(session.os, plan.commandLine, nodeVersion));
 		const terminal = await this._terminalService.createTerminal({
 			config: {
 				name: localize('jeffDesign.mirror.serverTerminal', "JeffCode Mirror: last commit"),
@@ -602,12 +617,23 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 		}));
 
 		this._setStep(session, localize('jeffDesign.mirror.stepAddress', "Waiting for the site of the last commit to start…"));
+		let restart = false;
 		const origin = await new Promise<string | undefined>(resolve => {
 			const waiting = serverStore.add(new DisposableStore());
 			const done = (value: string | undefined) => {
 				waiting.dispose();
 				resolve(value);
 			};
+			const restartWait = () => {
+				restart = true;
+				done(undefined);
+			};
+			session.restartServerWait = restartWait;
+			waiting.add(toDisposable(() => {
+				if (session.restartServerWait === restartWait) {
+					session.restartServerWait = undefined;
+				}
+			}));
 			waiting.add(terminal.onLineData(line => {
 				if (isPortPrompt(line)) {
 					// The server asks whether to use another port: yes.
@@ -625,6 +651,10 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 		});
 		if (session !== this._session || session.server.value !== serverStore) {
 			return;
+		}
+		if (restart) {
+			// The start command changed: replacing the server store stops this server.
+			return this._startServer(session, firstStart);
 		}
 		if (origin === undefined) {
 			throw new MirrorError(localize('jeffDesign.mirror.serverStopped', "The site of the last commit stopped. See the terminal \"JeffCode Mirror: last commit\"."));
@@ -721,9 +751,36 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 		}
 	}
 
-	private async _install(session: IMirrorSession, install: IInstallPlan): Promise<void> {
+	/** The Node.js version the copy asks for, from the command's folder up to the worktree root. */
+	private async _nodeVersion(session: IMirrorSession, cwd: URI): Promise<string | undefined> {
+		const read = async (resource: URI) => {
+			try {
+				return (await this._fileService.readFile(resource)).value.toString();
+			} catch {
+				return undefined;
+			}
+		};
+		for (let folder = cwd; isEqualOrParent(folder, session.worktree); folder = dirname(folder)) {
+			let engines: string | undefined;
+			try {
+				const value: unknown = JSON.parse(await read(joinPath(folder, 'package.json')) ?? 'null');
+				const field = typeof value === 'object' && value !== null ? (value as Record<string, unknown>).engines : undefined;
+				const node = typeof field === 'object' && field !== null ? (field as Record<string, unknown>).node : undefined;
+				engines = typeof node === 'string' ? node : undefined;
+			} catch {
+				engines = undefined;
+			}
+			const version = projectNodeVersion({ nvmrc: await read(joinPath(folder, '.nvmrc')), nodeVersion: await read(joinPath(folder, '.node-version')), engines });
+			if (version || isEqual(folder, session.worktree)) {
+				return version;
+			}
+		}
+		return undefined;
+	}
+
+	private async _install(session: IMirrorSession, install: IInstallPlan, nodeVersion: string | undefined): Promise<void> {
 		this._setStep(session, localize('jeffDesign.mirror.stepInstall', "Installing the dependencies of the last commit… (only when they change)"));
-		const invocation = shellInvocation(session.os, install.command);
+		const invocation = shellInvocation(session.os, withNodeVersionManager(session.os, install.command, nodeVersion));
 		const terminal = await this._terminalService.createTerminal({
 			config: {
 				name: localize('jeffDesign.mirror.installTerminal', "JeffCode Mirror: installing dependencies"),
@@ -1012,9 +1069,9 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 		try {
 			const value: unknown = JSON.parse(this._storageService.get(commandStorageKey(repoRoot), StorageScope.WORKSPACE) ?? 'null');
 			if (typeof value === 'object' && value !== null) {
-				const { line, cwd } = value as Record<string, unknown>;
+				const { line, cwd, custom } = value as Record<string, unknown>;
 				if (typeof line === 'string' && line.trim() && typeof cwd === 'string') {
-					return { line, cwd };
+					return { line, cwd, custom: custom === true };
 				}
 			}
 		} catch {
@@ -1049,7 +1106,7 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 		if (!value?.trim()) {
 			return undefined;
 		}
-		const command: IStartCommand = { line: value.trim(), cwd: current?.cwd ?? '' };
+		const command: IStartCommand = { line: value.trim(), cwd: current?.cwd ?? '', custom: true };
 		this._rememberCommand(repoRoot, command);
 		return command;
 	}
