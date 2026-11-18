@@ -21,6 +21,14 @@ Download the latest build from [Releases](https://github.com/JeffLord123/JeffCod
   xattr -cr /Applications/JeffCode.app
   ```
 
+To update on macOS (the unsigned app cannot update itself), quit nothing and run in Terminal:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/JeffLord123/JeffCode/jeffcode/scripts/jeffcode-update.sh | sh
+```
+
+It installs the latest release for your Mac, quitting and reopening JeffCode. Add a version to install that one instead: `... | sh -s 0.5.1`. On Windows, JeffCode downloads updates itself and offers to restart.
+
 JeffCode stores its settings and extensions in `~/.jeffcode`, separate from VS Code and Cursor.
 
 ## Design tools
