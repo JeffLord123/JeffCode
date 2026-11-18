@@ -1,0 +1,49 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) JeffCode contributors. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* Rulers along the top and left edges of the integrated browser page (designRulers.ts). The rulers
+   are canvases: designRulers.ts paints them with the colors below and the inherited workbench font. */
+.jeff-design-rulers {
+	--jeff-design-ruler-background: var(--vscode-editor-background);
+	--jeff-design-ruler-foreground: var(--vscode-editorLineNumber-foreground);
+	--jeff-design-ruler-border: var(--vscode-editorWidget-border, var(--vscode-widget-border, transparent));
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	pointer-events: none;
+	user-select: none;
+}
+
+.jeff-design-rulers[hidden] {
+	display: none;
+}
+
+.jeff-design-ruler,
+.jeff-design-ruler-corner {
+	position: absolute;
+	box-sizing: border-box;
+	pointer-events: auto;
+	touch-action: none;
+	background: var(--vscode-editor-background);
+}
+
+.jeff-design-ruler {
+	display: block;
+}
+
+/* Continues the borders the rulers draw along the page. */
+.jeff-design-ruler-corner {
+	border-right: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, transparent));
+	border-bottom: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, transparent));
+}
+
+/* A ruler holds the pointer while a guide is dragged out of it, so its cursor also shows over the page. */
+.jeff-design-ruler.horizontal.dragging {
+	cursor: row-resize;
+}
+
+.jeff-design-ruler.vertical.dragging {
+	cursor: col-resize;
+}

@@ -1,0 +1,112 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) JeffCode contributors. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* Covers the upstream welcome placeholder while the last commit's site starts. */
+.jeff-mirror-placeholder {
+	position: absolute;
+	inset: 0;
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+	box-sizing: border-box;
+	background: var(--vscode-editor-background);
+	color: var(--vscode-foreground);
+}
+
+.jeff-mirror-placeholder-content {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+	max-width: 420px;
+	text-align: center;
+}
+
+.jeff-mirror-placeholder-icon.codicon {
+	font-size: 32px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.jeff-mirror-placeholder.failed .jeff-mirror-placeholder-icon.codicon {
+	color: var(--vscode-editorWarning-foreground);
+}
+
+.jeff-mirror-placeholder-title {
+	font-size: 15px;
+	font-weight: 600;
+}
+
+.jeff-mirror-placeholder-detail {
+	font-size: 13px;
+	line-height: 1.5;
+	color: var(--vscode-descriptionForeground);
+	overflow-wrap: anywhere;
+}
+
+.jeff-mirror-placeholder-revision {
+	font-family: var(--vscode-editor-font-family);
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.jeff-mirror-placeholder-buttons {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+.jeff-mirror-button {
+	padding: 4px 12px;
+	border: 1px solid var(--vscode-button-border, transparent);
+	border-radius: var(--vscode-cornerRadius-small, 4px);
+	background: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-button-secondaryForeground);
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.jeff-mirror-button:hover {
+	background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.jeff-mirror-button:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 1px;
+}
+
+/* Badge before the address: which side of the comparison this page is. */
+.jeff-mirror-badge {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex-shrink: 0;
+	height: 18px;
+	margin: 0 4px 0 2px;
+	padding: 0 6px;
+	border-radius: 9px;
+	font-size: 11px;
+	white-space: nowrap;
+	background: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+}
+
+.jeff-mirror-badge.head {
+	background: var(--vscode-statusBarItem-remoteBackground, var(--vscode-badge-background));
+	color: var(--vscode-statusBarItem-remoteForeground, var(--vscode-badge-foreground));
+}
+
+.jeff-mirror-badge.failed {
+	background: var(--vscode-inputValidation-warningBackground, var(--vscode-badge-background));
+	color: var(--vscode-foreground);
+}
+
+.jeff-mirror-badge .codicon {
+	font-size: 12px;
+}

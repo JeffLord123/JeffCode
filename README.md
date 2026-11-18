@@ -23,12 +23,16 @@ Download the latest build from [Releases](https://github.com/JeffLord123/JeffCod
 
 JeffCode stores its settings and extensions in `~/.jeffcode`, separate from VS Code and Cursor.
 
-## Design panel
+## Design tools
 
-Open a page in the integrated browser (`Ctrl+Shift+P`, "Open Integrated Browser"), then use the two buttons at the right of the address bar:
+Open the integrated browser with the globe button of the title bar, then open your site. The design tools are the buttons at the right of the address bar:
 
+- **Open Integrated Browser** (globe) opens another browser tab.
 - **Design Panel** opens the panel beside the page.
 - **Select Element to Design** (`Ctrl+Shift+C`) lets you click an element in the page.
+- **Rulers** shows graduated rulers along the top and left of the page, in pixels of the page. Drag from a ruler onto the page to add a guide. Drag a guide to move it, back onto its ruler to remove it, or hover it and press Delete. Right-click a ruler to clear the guides.
+- **Measure** works like Figma's measure tool. Hover an element to see its size and its distances to its neighbours and its parent. The cursor snaps to the borders of elements: drag from a border to place a measurement, which stays and follows layout changes. Hover a placed measurement to move it or delete it. The arrow next to the button chooses what is shown on every element: gaps and padding (by default), margins, components and their size, font sizes. Escape leaves the tool.
+- **Mirror Mode** shows your site as it is in the last commit on the left, and with your uncommitted changes on the right, side by side. The left side is the real site, not a picture: JeffCode copies the last commit to `~/.jeffcode/mirror` (a git worktree), installs its dependencies when they change, and starts it with the same command as your site on another port. Navigation and scrolling stay in sync. Without uncommitted changes, the right side says so. The arrow next to the button turns the scroll sync off, shows the terminal of the copy, or changes its start command.
 
 Edit values in the **Design** or **CSS** tab: the page updates live. Drag a field's icon sideways to scrub a value, or use the arrow keys (Shift for steps of 10). The bar at the bottom counts your changes: **Reset** undoes them, **Copy CSS** copies them as CSS, **Apply** opens Claude Code with a ready-to-send prompt describing them so it can update the source code.
 
