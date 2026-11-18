@@ -8,6 +8,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/tes
 import {
 	detectPackageManager,
 	extractShellCommand,
+	findEnvPortVariables,
 	findPortConflict,
 	findServerUrl,
 	guessStartCommand,
@@ -393,12 +394,20 @@ suite('JeffDesign - designMirrorCommand', () => {
 			{ port: 4111, files: ['configs/vite-config/src/plugins/proxy.ts', 'apps/lmp/server dev.mjs'] },
 			{ port: 4111, files: ['configs/vite-config/src/plugins/proxy.ts', 'apps/lmp/server dev.mjs'] },
 			{ port: 3000, files: ['server.js'] },
-			undefined,
+			{ port: 4111, files: [] },
 			undefined,
 		]);
 		assert.strictEqual(
 			replacePortInSource('const port = 4111; listen(4111); const url = `http://localhost:4111/api`; const other = 14111 + 4111.5;', 4111, 4112),
 			'const port = 4112; listen(4112); const url = `http://localhost:4112/api`; const other = 14111 + 4111.5;',
+		);
+	});
+
+	test('findEnvPortVariables', () => {
+		const env = 'VITE_MS_ENV=development\nVITE_PORT=3111\r\nVITE_PROXY_PORT=4111\nexport API_PORT="4111" # api\nOTHER=4111\nVITE_APP_PROXY_PORT=5111\nVITE_PROXY_PORT=4111\n# PORT=4111\n';
+		assert.deepStrictEqual(
+			[findEnvPortVariables(env, 4111), findEnvPortVariables(env, 3111), findEnvPortVariables(env, 9999)],
+			[['VITE_PROXY_PORT', 'API_PORT'], ['VITE_PORT'], []],
 		);
 	});
 

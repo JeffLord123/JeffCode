@@ -590,7 +590,7 @@ export function isPortPrompt(line: string): boolean {
 /** A port the copy could not listen on because it is taken, and the files of the project that chose it. */
 export interface IMirrorPortConflict {
 	readonly port: number;
-	/** Paths relative to the copy's root, with `/` separators, outside `node_modules`. */
+	/** Paths relative to the copy's root, with `/` separators, outside `node_modules`; may be empty. */
 	readonly files: readonly string[];
 }
 
@@ -630,7 +630,22 @@ export function findPortConflict(lines: readonly string[], root: string): IMirro
 			}
 		}
 	}
-	return port !== undefined && port > 0 && port < 65536 && files.length ? { port, files } : undefined;
+	return port !== undefined && port > 0 && port < 65536 ? { port, files } : undefined;
+}
+
+/**
+ * The variables of a dotenv file (`.env`, `.env.development`…) that set a port to the given value,
+ * e.g. `VITE_PROXY_PORT` for `VITE_PROXY_PORT=4111`. Only names that mention a port count.
+ */
+export function findEnvPortVariables(content: string, port: number): string[] {
+	const names: string[] = [];
+	for (const line of content.split(/\r?\n/)) {
+		const match = /^\s*(?:export\s+)?(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?<quote>["']?)(?<value>\d{1,5})\k<quote>\s*(?:#.*)?$/.exec(line);
+		if (match?.groups && /port/i.test(match.groups.name) && Number(match.groups.value) === port && !names.includes(match.groups.name)) {
+			names.push(match.groups.name);
+		}
+	}
+	return names;
 }
 
 /** Replaces a port number written in source code, as a whole number: `4111` but not `14111` or `4111.5`. */

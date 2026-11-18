@@ -45,6 +45,7 @@ import { ITerminalInstance, ITerminalService } from '../../terminal/browser/term
 import {
 	detectPackageManager,
 	extractShellCommand,
+	findEnvPortVariables,
 	findPortConflict,
 	findServerUrl,
 	guessStartCommand,
@@ -177,6 +178,15 @@ interface IMirrorSession {
 	 * the copy (and again after each checkout, which restores the files).
 	 */
 	readonly portRewrites: { readonly file: string; readonly from: number; readonly to: number }[];
+	/**
+	 * Port variables of the project's dotenv files given another value in the copy's environment,
+	 * which tools such as Vite and dotenv prefer to the files: e.g. `VITE_PROXY_PORT=4112`.
+	 */
+	readonly envOverrides: Record<string, string>;
+	/** Dotenv files of the copy, relative to its root; looked up once per checkout. */
+	envFiles: string[] | undefined;
+	/** How many times a taken port was moved, to give up on a server that keeps failing. */
+	portMoves: number;
 }
 
 const commandStorageKey = (repoRoot: URI) => `jeffDesign.mirror.command:${repoRoot.toString()}`;
@@ -511,6 +521,9 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 			pinned: undefined,
 			updateCover: undefined,
 			portRewrites: [],
+			envOverrides: {},
+			envFiles: undefined,
+			portMoves: 0,
 		};
 		this._session = session;
 		this._sessionStore.value = store;
@@ -620,6 +633,7 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 			await this._git(session, `git -C ${worktree} submodule update --init --recursive`);
 		}
 		await this._copyEnvFiles(session);
+		session.envFiles = undefined;
 		this._onDidChange.fire();
 	}
 
@@ -705,6 +719,12 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 		this._setStep(session, localize('jeffDesign.mirror.stepServer', "Starting the site of the last commit…"));
 		await this._applyPortRewrites(session);
 		const port = await this._choosePort(session);
+		if (session.livePort !== undefined) {
+			// The live site's port set in a dotenv file (`VITE_PORT=3111`) becomes the copy's port.
+			for (const name of await this._envPortVariables(session, session.livePort)) {
+				session.envOverrides[name] = String(port);
+			}
+		}
 		const packageJson = joinPath(cwd, 'package.json');
 		const scripts = await this._readScripts(packageJson);
 		const plan = planMirrorCommand(command.line, port, scripts);
@@ -721,7 +741,7 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 				executable: invocation.executable,
 				args: invocation.args,
 				cwd,
-				env: { PORT: String(port), BROWSER: 'none' },
+				env: { ...session.envOverrides, PORT: String(port), BROWSER: 'none' },
 				isFeatureTerminal: true,
 				waitOnExit: true,
 				icon: Codicon.diffSidebyside,
@@ -845,10 +865,10 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 	 */
 	private async _movePortOfConflict(session: IMirrorSession, output: readonly string[], serverPort: number): Promise<boolean> {
 		const conflict = findPortConflict(output, this._shellPath(session.worktree));
-		if (!conflict || session.portRewrites.length >= 10 || session.portRewrites.some(rewrite => rewrite.to === conflict.port && conflict.files.includes(rewrite.file))) {
+		if (!conflict || session.portMoves >= 10) {
 			return false;
 		}
-		const taken = new Set([serverPort, session.livePort, ...session.portRewrites.map(rewrite => rewrite.to)]);
+		const taken = new Set([serverPort, session.livePort, ...session.portRewrites.map(rewrite => rewrite.to), ...Object.values(session.envOverrides).map(Number)]);
 		let to = conflict.port + 1;
 		while (taken.has(to)) {
 			to++;
@@ -863,14 +883,60 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 				to++;
 			}
 		}
-		const rewrites = conflict.files.map(file => ({ file, from: conflict.port, to }));
-		if (!await this._rewritePorts(session, rewrites)) {
-			return false;
+		// First a variable of a dotenv file that sets the port (or one we set to it), else the port
+		// written in the files of the stack trace.
+		const variables = [
+			...Object.keys(session.envOverrides).filter(name => session.envOverrides[name] === String(conflict.port)),
+			...await this._envPortVariables(session, conflict.port),
+		];
+		if (variables.length) {
+			for (const name of variables) {
+				session.envOverrides[name] = String(to);
+			}
+			this._logService.info(`[JeffDesign] Mirror Mode: port ${conflict.port} is taken, the copy uses ${to} for ${variables.join(', ')}`);
+		} else {
+			const rewrites = conflict.files.map(file => ({ file, from: conflict.port, to }));
+			if (!await this._rewritePorts(session, rewrites)) {
+				return false;
+			}
+			session.portRewrites.push(...rewrites);
+			this._logService.info(`[JeffDesign] Mirror Mode: port ${conflict.port} is taken, the copy uses ${to} in ${conflict.files.join(', ')}`);
 		}
-		session.portRewrites.push(...rewrites);
-		this._logService.info(`[JeffDesign] Mirror Mode: port ${conflict.port} is taken, the copy uses ${to} in ${conflict.files.join(', ')}`);
+		session.portMoves++;
 		this._setStep(session, localize('jeffDesign.mirror.stepPortMoved', "Port {0} is already used by your site: the copy uses {1} instead…", conflict.port, to));
 		return true;
+	}
+
+	/** The port variables of the copy's dotenv files that are set to the given port. */
+	private async _envPortVariables(session: IMirrorSession, port: number): Promise<string[]> {
+		if (!session.envFiles) {
+			// Tracked dotenv files, plus the ignored ones copied from the repository's root.
+			const output = joinPath(dirname(session.logFile), `${basename(session.worktree)}.env-files`);
+			const worktree = this._quote(session, this._shellPath(session.worktree));
+			const code = await this._runHidden(session, `git -C ${worktree} ls-files -c -- ${this._quote(session, ':(glob)**/.env*')} > ${this._quote(session, this._shellPath(output))}`, session.worktree, false);
+			const tracked = code === 0 ? (await this._fileService.readFile(output)).value.toString().split(/\r?\n/).filter(Boolean) : [];
+			let root: string[] = [];
+			try {
+				root = ((await this._fileService.resolve(session.worktree)).children ?? []).filter(child => child.isFile && child.name.startsWith('.env')).map(child => child.name);
+			} catch {
+				// No listing: tracked files only.
+			}
+			session.envFiles = [...new Set([...tracked, ...root])].filter(file => !file.split('/').includes('node_modules')).slice(0, 500);
+		}
+		const names: string[] = [];
+		for (const file of session.envFiles) {
+			try {
+				const content = (await this._fileService.readFile(joinPath(session.worktree, ...file.split('/')))).value.toString();
+				for (const name of findEnvPortVariables(content, port)) {
+					if (!names.includes(name)) {
+						names.push(name);
+					}
+				}
+			} catch {
+				// Gone in this commit.
+			}
+		}
+		return names;
 	}
 
 	/** Applies the port rewrites again: a checkout of the copy restores its files. */
