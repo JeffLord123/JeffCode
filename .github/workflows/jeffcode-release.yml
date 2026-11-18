@@ -140,8 +140,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Cross-compiled on Intel: GitHub's Apple Silicon runners are often out of capacity.
           - arch: arm64
-            runner: macos-15
+            runner: macos-15-intel
           - arch: x64
             runner: macos-15-intel
     runs-on: ${{ matrix.runner }}
