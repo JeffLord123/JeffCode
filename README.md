@@ -21,7 +21,7 @@ Download the latest build from [Releases](https://github.com/JeffLord123/JeffCod
   xattr -cr /Applications/JeffCode.app
   ```
 
-To update on macOS (the unsigned app cannot update itself), quit nothing and run in Terminal:
+To update on macOS (the unsigned app cannot update itself), run in Terminal:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/JeffLord123/JeffCode/jeffcode/scripts/jeffcode-update.sh | sh
