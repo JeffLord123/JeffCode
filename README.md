@@ -14,8 +14,8 @@ Upstream's original README is kept in [README.vscode.md](README.vscode.md).
 
 Download the latest build from [Releases](https://github.com/JeffLord123/JeffCode/releases).
 
-- **Windows:** run `JeffCode-Setup-win32-x64.exe`. SmartScreen may warn because the app is unsigned: "More info" then "Run anyway".
-- **macOS:** unzip `JeffCode-darwin-arm64.zip` (Apple Silicon) or `JeffCode-darwin-x64.zip` (Intel), move `JeffCode.app` to Applications, then run once:
+- **Windows:** run `JeffCode-Setup-<version>-win32-x64.exe`. SmartScreen may warn because the app is unsigned: "More info" then "Run anyway".
+- **macOS:** unzip `JeffCode-<version>-darwin-arm64.zip` (Apple Silicon) or `JeffCode-<version>-darwin-x64.zip` (Intel), move `JeffCode.app` to Applications, then run once:
 
   ```sh
   xattr -cr /Applications/JeffCode.app

@@ -124,8 +124,10 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           $setup = Get-ChildItem .build/win32-x64 -Recurse -Filter *.exe | Where-Object { $_.FullName -match 'user-setup' } | Select-Object -First 1
           if (-not $setup) { throw 'user setup exe not found' }
-          Copy-Item $setup.FullName dist/JeffCode-Setup-win32-x64.exe
-          Compress-Archive -Path ../VSCode-win32-x64/* -DestinationPath dist/JeffCode-win32-x64.zip
+          # The version is in the file names so that installers of different releases cannot be mixed up.
+          $version = $env:GITHUB_REF_NAME -replace '^jeffcode-', ''
+          Copy-Item $setup.FullName "dist/JeffCode-Setup-$version-win32-x64.exe"
+          Compress-Archive -Path ../VSCode-win32-x64/* -DestinationPath "dist/JeffCode-$version-win32-x64.zip"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -183,7 +185,7 @@ jobs:
           APP="../VSCode-darwin-${{ matrix.arch }}/JeffCode.app"
           codesign --force --deep --sign - "$APP"
           mkdir -p dist
-          ditto -c -k --sequesterRsrc --keepParent "$APP" "dist/JeffCode-darwin-${{ matrix.arch }}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "dist/JeffCode-${GITHUB_REF_NAME#jeffcode-}-darwin-${{ matrix.arch }}.zip"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -209,10 +211,10 @@ jobs:
           base="https://github.com/${GITHUB_REPOSITORY}/releases"
           release="${GITHUB_REF_NAME#jeffcode-}"
           timestamp="$(date +%s)000"
-          setup=dist/JeffCode-Setup-win32-x64.exe
+          setup="dist/JeffCode-Setup-${release}-win32-x64.exe"
           test -f "$setup"
           jq -n --arg version "$GITHUB_SHA" --arg productVersion "$release" --argjson timestamp "$timestamp" \
-            --arg url "$base/download/${GITHUB_REF_NAME}/JeffCode-Setup-win32-x64.exe" \
+            --arg url "$base/download/${GITHUB_REF_NAME}/JeffCode-Setup-${release}-win32-x64.exe" \
             --arg sha256hash "$(sha256sum "$setup" | cut -d' ' -f1)" \
             '{version: $version, productVersion: $productVersion, timestamp: $timestamp, url: $url, sha256hash: $sha256hash}' \
             > dist/update-win32-x64-user.json
@@ -231,9 +233,9 @@ jobs:
           cat > notes.md <<'EOF'
           ## Install
 
-          **Windows:** run `JeffCode-Setup-win32-x64.exe`. Windows SmartScreen may warn (unsigned app): click "More info" then "Run anyway".
+          **Windows:** run `JeffCode-Setup-VERSION-win32-x64.exe`. Windows SmartScreen may warn (unsigned app): click "More info" then "Run anyway".
 
-          **macOS:** unzip `JeffCode-darwin-arm64.zip` (Apple Silicon) or `JeffCode-darwin-x64.zip` (Intel), move `JeffCode.app` to Applications, then run once in Terminal:
+          **macOS:** unzip `JeffCode-VERSION-darwin-arm64.zip` (Apple Silicon) or `JeffCode-VERSION-darwin-x64.zip` (Intel), move `JeffCode.app` to Applications, then run once in Terminal:
 
               xattr -cr /Applications/JeffCode.app
 
@@ -243,4 +245,5 @@ jobs:
 
           **WSL:** install the "Open Remote - WSL" extension (jeanp413.open-remote-wsl) from the Extensions view. JeffCode downloads its server for WSL (`jeffcode-reh-linux-x64.tar.gz`) from this release automatically.
           EOF
+          sed -i "s/VERSION/${GITHUB_REF_NAME#jeffcode-}/g" notes.md
           gh release create "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --notes-file notes.md
