@@ -358,7 +358,8 @@ export class WindowTitle extends Disposable {
 		const folderName = folder ? folder.name : '';
 		const folderPath = folder ? this.labelService.getUriLabel(folder.uri) : '';
 		const dirty = editor?.isDirty() && !editor.isSaving() ? WindowTitle.TITLE_DIRTY : '';
-		const appName = this.productService.nameLong;
+		// JeffCode: the release number follows the name, so the installed version is always visible.
+		const appName = this.productService.release ? `${this.productService.nameLong} ${this.productService.release}` : this.productService.nameLong;
 		const profileName = this.userDataProfileService.currentProfile.isDefault ? '' : this.userDataProfileService.currentProfile.name;
 		const focusedView: string = this.viewsService.getFocusedViewName();
 		const activeEditorState = editorResource ? this.decorationsService.getDecoration(editorResource, false)?.tooltip : undefined;

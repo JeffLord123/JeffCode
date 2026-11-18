@@ -221,6 +221,8 @@ export interface IProductConfiguration {
 	readonly documentationUrl?: string;
 	readonly serverDocumentationUrl?: string;
 	readonly releaseNotesUrl?: string;
+	/** JeffCode: the release number (e.g. `0.5.3`), written into product.json by the release build. */
+	readonly release?: string;
 	readonly keyboardShortcutsUrlMac?: string;
 	readonly keyboardShortcutsUrlLinux?: string;
 	readonly keyboardShortcutsUrlWin?: string;
