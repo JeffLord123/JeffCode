@@ -5,7 +5,6 @@
 	"dataFolderName": ".jeffcode",
 	"sharedDataFolderName": ".jeffcode-shared",
 	"win32MutexName": "jeffcode",
-	"win32VersionedUpdate": true,
 	"licenseName": "MIT",
 	"licenseUrl": "https://github.com/microsoft/vscode/blob/main/LICENSE.txt",
 	"serverLicenseUrl": "https://github.com/microsoft/vscode/blob/main/LICENSE.txt",
