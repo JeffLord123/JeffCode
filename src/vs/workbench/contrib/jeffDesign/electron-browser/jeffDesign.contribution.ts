@@ -245,5 +245,10 @@ registerAction2(SelectDesignElementAction);
 // Keep the Integrated Browser button of the title bar visible even when no browser is open, so the
 // browser can always be opened with one click. Users can still hide it from the title bar menu.
 Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).registerDefaultConfigurations([{
-	overrides: { 'workbench.browser.showInTitleBar': true },
+	overrides: {
+		'workbench.browser.showInTitleBar': true,
+		// Pages show at their real size (1 CSS pixel = 1 pixel), not at the zoom of the interface:
+		// what a designer measures in the page must match the design. "Reset Zoom" comes back to 100%.
+		'workbench.browser.pageZoom': '100%',
+	},
 }]);

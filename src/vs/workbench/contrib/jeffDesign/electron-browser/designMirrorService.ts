@@ -32,6 +32,7 @@ import { TerminalCapability } from '../../../../platform/terminal/common/capabil
 import { editorBackground, editorForeground } from '../../../../platform/theme/common/colorRegistry.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
+import { EditorCloseContext } from '../../../common/editor.js';
 import { GroupDirection, IEditorGroup, IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { ILifecycleService, LifecyclePhase } from '../../../services/lifecycle/common/lifecycle.js';
@@ -67,7 +68,7 @@ import {
 	withNodeVersionManager,
 } from '../common/designMirrorCommand.js';
 import { DesignPageOverlay, IDesignOverlayService } from './designPageOverlay.js';
-import { CONTEXT_DESIGN_MIRROR_ACTIVE, CONTEXT_DESIGN_MIRROR_SYNC_SCROLL } from './designToolbar.js';
+import { CONTEXT_DESIGN_MIRROR_ACTIVE, CONTEXT_DESIGN_MIRROR_SYNC_NAVIGATION, CONTEXT_DESIGN_MIRROR_SYNC_SCROLL } from './designToolbar.js';
 
 export const IDesignMirrorService = createDecorator<IDesignMirrorService>('jeffDesignMirrorService');
 
@@ -112,6 +113,10 @@ export interface IDesignMirrorService {
 	chooseCommit(): Promise<void>;
 	/** When the address of the copy was not detected: asks for it and shows it. */
 	enterUrlManually(): Promise<void>;
+
+	/** Whether a page opened on one side is opened on the other. Off by default: each side is used on its own. */
+	readonly syncNavigation: boolean;
+	setSyncNavigation(sync: boolean): void;
 
 	readonly syncScroll: boolean;
 	setSyncScroll(sync: boolean): void;
@@ -191,7 +196,8 @@ interface IMirrorSession {
 
 const commandStorageKey = (repoRoot: URI) => `jeffDesign.mirror.command:${repoRoot.toString()}`;
 const headStorageKey = 'jeffDesign.mirror.headView';
-const syncScrollStorageKey = 'jeffDesign.mirror.syncScroll';
+const syncScrollStorageKey = 'jeffDesign.mirror.syncScrollPreference';
+const syncNavigationStorageKey = 'jeffDesign.mirror.syncNavigation';
 const stampFileName = '.jeffcode-mirror-stamp';
 const minute = 60_000;
 
@@ -202,8 +208,10 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 	private _session: IMirrorSession | undefined;
 	private readonly _sessionStore = this._register(new MutableDisposable<DisposableStore>());
 	private _syncScroll: boolean;
+	private _syncNavigation: boolean;
 	private readonly _activeKey: IContextKey<boolean>;
 	private readonly _syncScrollKey: IContextKey<boolean>;
+	private readonly _syncNavigationKey: IContextKey<boolean>;
 	/** Terminals Mirror Mode created, so they are not mistaken for the user's dev server. */
 	private readonly _ownTerminals = new Set<ITerminalInstance>();
 
@@ -231,9 +239,13 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 	) {
 		super();
 		this._activeKey = CONTEXT_DESIGN_MIRROR_ACTIVE.bindTo(contextKeyService);
-		this._syncScroll = this._storageService.getBoolean(syncScrollStorageKey, StorageScope.PROFILE, true);
+		// Both sides are used on their own unless the user turns the syncs on.
+		this._syncScroll = this._storageService.getBoolean(syncScrollStorageKey, StorageScope.PROFILE, false);
 		this._syncScrollKey = CONTEXT_DESIGN_MIRROR_SYNC_SCROLL.bindTo(contextKeyService);
 		this._syncScrollKey.set(this._syncScroll);
+		this._syncNavigation = this._storageService.getBoolean(syncNavigationStorageKey, StorageScope.PROFILE, false);
+		this._syncNavigationKey = CONTEXT_DESIGN_MIRROR_SYNC_NAVIGATION.bindTo(contextKeyService);
+		this._syncNavigationKey.set(this._syncNavigation);
 
 		// The window was reloaded during a session: its last-commit tab came back but its server is gone.
 		const staleHead = this._storageService.get(headStorageKey, StorageScope.WORKSPACE);
@@ -249,6 +261,20 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 
 	get syncScroll(): boolean {
 		return this._syncScroll;
+	}
+
+	get syncNavigation(): boolean {
+		return this._syncNavigation;
+	}
+
+	setSyncNavigation(sync: boolean): void {
+		if (this._syncNavigation === sync) {
+			return;
+		}
+		this._syncNavigation = sync;
+		this._syncNavigationKey.set(sync);
+		this._storageService.store(syncNavigationStorageKey, sync, StorageScope.PROFILE, StorageTarget.USER);
+		this._onDidChange.fire();
 	}
 
 	getSide(browserViewId: string): IDesignMirrorSide | undefined {
@@ -567,16 +593,16 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 		const headModel = session.headModel = await input.resolve();
 		session.headOverlay = this._overlayService.getOverlay(headModel);
 
-		// Closing either side ends Mirror Mode.
+		// Closing either side ends Mirror Mode; moving a side to another group or window does not.
 		session.store.add(headModel.onWillDispose(() => this._stopIf(session)));
 		session.store.add(session.workingModel.onWillDispose(() => this._stopIf(session)));
 		session.store.add(this._editorService.onDidCloseEditor(event => {
-			if (event.editor instanceof BrowserEditorInput && (event.editor.id === session.headId || event.editor.id === session.workingModel.id)) {
+			if (event.context !== EditorCloseContext.MOVE && event.editor instanceof BrowserEditorInput && (event.editor.id === session.headId || event.editor.id === session.workingModel.id)) {
 				this._stopIf(session);
 			}
 		}));
 
-		this._syncNavigation(session, headModel);
+		this._followNavigation(session, headModel);
 		this._updateScrollSync(session);
 	}
 
@@ -588,7 +614,9 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 
 	private async _closeHeadEditor(headId: string, group: IEditorGroup | undefined): Promise<void> {
 		try {
-			for (const candidate of group ? [group] : this._editorGroupsService.groups) {
+			// The tab may have been moved to another group or window: look everywhere, its group first.
+			const groups = this._editorGroupsService.groups;
+			for (const candidate of group && groups.includes(group) ? [group, ...groups.filter(other => other !== group)] : groups) {
 				const editor = candidate.editors.find(e => e instanceof BrowserEditorInput && e.id === headId);
 				if (!editor) {
 					continue;
@@ -1146,17 +1174,20 @@ class DesignMirrorService extends Disposable implements IDesignMirrorService {
 		model.loadURL(url).catch(error => this._logService.debug('[JeffDesign] mirror navigation failed', error));
 	}
 
-	private _syncNavigation(session: IMirrorSession, headModel: IBrowserViewModel): void {
+	private _followNavigation(session: IMirrorSession, headModel: IBrowserViewModel): void {
 		const follow = (from: IBrowserViewModel, to: IBrowserViewModel, fromOrigin: () => string | undefined, toOrigin: () => string | undefined) => {
 			session.store.add(from.onDidNavigate(event => {
 				const followedUntil = this._followUntil.get(from) ?? 0;
 				const source = fromOrigin();
 				const destination = toOrigin();
-				if (session !== this._session || session.status !== 'ready' || Date.now() < followedUntil || !source || !destination) {
+				if (!this._syncNavigation || session !== this._session || session.status !== 'ready' || Date.now() < followedUntil || !source || !destination) {
 					return;
 				}
 				const mapped = mapMirrorUrl(event.url, source, destination);
-				if (mapped) {
+				// Changes after `#` are state of the page (a map's position…), not another page: each
+				// side keeps its own, or the two would keep moving each other.
+				const withoutHash = (url: string) => url.replace(/#.*$/, '');
+				if (mapped && withoutHash(mapped) !== withoutHash(to.url)) {
 					this._navigate(session, to, mapped);
 				}
 			}));

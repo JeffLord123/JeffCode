@@ -45,7 +45,8 @@ export const CONTEXT_DESIGN_MEASURE = new RawContextKey<boolean>('jeffDesignMeas
 export const CONTEXT_DESIGN_MIRROR_ACTIVE = new RawContextKey<boolean>('jeffDesignMirrorActive', false, localize('jeffDesign.mirrorActive', "Whether Mirror Mode compares the last commit with the uncommitted changes"));
 
 /** Bound globally. */
-export const CONTEXT_DESIGN_MIRROR_SYNC_SCROLL = new RawContextKey<boolean>('jeffDesignMirrorSyncScroll', true, localize('jeffDesign.mirrorSyncScroll', "Whether Mirror Mode keeps the scroll position of both pages in sync"));
+export const CONTEXT_DESIGN_MIRROR_SYNC_NAVIGATION = new RawContextKey<boolean>('jeffDesignMirrorSyncNavigation', false, localize('jeffDesign.mirrorSyncNavigation', "Whether Mirror Mode opens on one side the pages opened on the other"));
+export const CONTEXT_DESIGN_MIRROR_SYNC_SCROLL = new RawContextKey<boolean>('jeffDesignMirrorSyncScroll', false,localize('jeffDesign.mirrorSyncScroll', "Whether Mirror Mode keeps the scroll position of both pages in sync"));
 
 /** Bound globally, one key per measure category, true when the category is shown. */
 export const CONTEXT_DESIGN_MEASURE_CATEGORIES: { readonly [K in DesignMeasureCategory]: RawContextKey<boolean> } = {

@@ -11,7 +11,7 @@ import { ServicesAccessor } from '../../../../platform/instantiation/common/inst
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { BrowserActionCategory, BrowserEditor } from '../../browserView/electron-browser/browserEditor.js';
 import { IDesignMirrorService } from './designMirrorService.js';
-import { CONTEXT_DESIGN_MIRROR_ACTIVE, CONTEXT_DESIGN_MIRROR_SYNC_SCROLL, DESIGN_PAGE_PRECONDITION, DESIGN_TOOLBAR_GROUP, DesignToolbarOrder, JeffDesignMirrorMenu } from './designToolbar.js';
+import { CONTEXT_DESIGN_MIRROR_ACTIVE, CONTEXT_DESIGN_MIRROR_SYNC_NAVIGATION, CONTEXT_DESIGN_MIRROR_SYNC_SCROLL, DESIGN_PAGE_PRECONDITION, DESIGN_TOOLBAR_GROUP, DesignToolbarOrder, JeffDesignMirrorMenu } from './designToolbar.js';
 
 class ToggleMirrorAction extends Action2 {
 	static readonly ID = 'jeffcode.design.toggleMirror';
@@ -48,18 +48,42 @@ class ToggleMirrorAction extends Action2 {
 	}
 }
 
+class ToggleMirrorSyncNavigationAction extends Action2 {
+	constructor() {
+		super({
+			id: 'jeffcode.design.mirror.syncNavigation',
+			title: localize2('jeffDesign.mirrorSyncNavigation', "Sync Navigation"),
+			metadata: { description: localize2('jeffDesign.mirrorSyncNavigationDescription', "Open on one side of Mirror Mode the pages opened on the other") },
+			category: BrowserActionCategory,
+			f1: true,
+			toggled: ContextKeyExpr.equals(CONTEXT_DESIGN_MIRROR_SYNC_NAVIGATION.key, true),
+			menu: {
+				id: JeffDesignMirrorMenu,
+				group: '1_options',
+				order: 0,
+			},
+		});
+	}
+
+	run(accessor: ServicesAccessor): void {
+		const mirrorService = accessor.get(IDesignMirrorService);
+		mirrorService.setSyncNavigation(!mirrorService.syncNavigation);
+	}
+}
+
 class ToggleMirrorSyncScrollAction extends Action2 {
 	constructor() {
 		super({
 			id: 'jeffcode.design.mirror.syncScroll',
-			title: localize2('jeffDesign.mirrorSyncScroll', "Sync Scrolling"),
+			title: localize2('jeffDesign.mirrorSyncScroll', "Sync Page Scrolling"),
+			metadata: { description: localize2('jeffDesign.mirrorSyncScrollDescription', "Scroll both pages of Mirror Mode together (the page itself, not the inside of a map or a list)") },
 			category: BrowserActionCategory,
 			f1: true,
 			toggled: ContextKeyExpr.equals(CONTEXT_DESIGN_MIRROR_SYNC_SCROLL.key, true),
 			menu: {
 				id: JeffDesignMirrorMenu,
 				group: '1_options',
-				order: 0,
+				order: 1,
 			},
 		});
 	}
@@ -136,6 +160,7 @@ class ChangeMirrorCommandAction extends Action2 {
 
 registerAction2(ToggleMirrorAction);
 registerAction2(ChooseMirrorCommitAction);
+registerAction2(ToggleMirrorSyncNavigationAction);
 registerAction2(ToggleMirrorSyncScrollAction);
 registerAction2(ShowMirrorTerminalAction);
 registerAction2(ChangeMirrorCommandAction);
