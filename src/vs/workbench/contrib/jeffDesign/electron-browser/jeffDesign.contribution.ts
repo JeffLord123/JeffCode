@@ -9,8 +9,6 @@ import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { BrowserViewCommandId } from '../../../../platform/browserView/common/browserView.js';
-import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
 import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
@@ -160,32 +158,6 @@ function getDesignContribution(accessor: ServicesAccessor, browserEditor: unknow
 	return editor instanceof BrowserEditor ? editor.getContribution(BrowserEditorDesignContribution) : undefined;
 }
 
-/**
- * Opens a new integrated browser tab from the design tools, so the browser is one click away
- * instead of a trip through the Command Palette.
- */
-class OpenIntegratedBrowserAction extends Action2 {
-	constructor() {
-		super({
-			id: 'jeffcode.design.openBrowser',
-			title: localize2('jeffDesign.openBrowser', "Open Integrated Browser"),
-			category: BrowserActionCategory,
-			icon: Codicon.globe,
-			f1: false,
-			menu: {
-				id: MenuId.BrowserActionsToolbar,
-				group: DESIGN_TOOLBAR_GROUP,
-				order: DesignToolbarOrder.OpenBrowser,
-			},
-		});
-	}
-
-	async run(accessor: ServicesAccessor): Promise<void> {
-		// Called without arguments: the toolbar passes its editor, which the upstream command would take for options.
-		await accessor.get(ICommandService).executeCommand(BrowserViewCommandId.Open);
-	}
-}
-
 class ToggleDesignPanelAction extends Action2 {
 	constructor() {
 		super({
@@ -238,7 +210,6 @@ class SelectDesignElementAction extends Action2 {
 	}
 }
 
-registerAction2(OpenIntegratedBrowserAction);
 registerAction2(ToggleDesignPanelAction);
 registerAction2(SelectDesignElementAction);
 

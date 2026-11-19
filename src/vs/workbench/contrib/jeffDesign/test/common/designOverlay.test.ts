@@ -22,16 +22,22 @@ suite('JeffDesign - designOverlay', () => {
 			{ type: 'focus', rect: { x: 10, y: 20, width: 30, height: 40 } },
 			{ type: 'focus' },
 			{ type: 'focus', rect: null },
+			{ type: 'viewport', viewport: { ...viewport, visualX: 40, visualY: 30.5, visualScale: 2 } },
+			{ type: 'zoom', x: 100, y: 50.5, factor: 1.2 },
+			{ type: 'pan', x: 100, y: 50, dx: -12, dy: 3.5 },
 		];
 		assert.deepStrictEqual(payloads.map(payload => parseDesignOverlayNotification(JSON.stringify(payload))), [
 			{ type: 'ready' },
 			{ type: 'measureExit' },
-			{ type: 'viewport', viewport: { ...viewport, programmatic: true } },
-			{ type: 'viewport', viewport: { ...viewport, programmatic: false } },
+			{ type: 'viewport', viewport: { ...viewport, programmatic: true, visualX: 0, visualY: 0, visualScale: 1 } },
+			{ type: 'viewport', viewport: { ...viewport, programmatic: false, visualX: 0, visualY: 0, visualScale: 1 } },
 			{ type: 'guides', guides: [{ id: 'g1', axis: 'x', position: 120 }, { id: 'g2', axis: 'y', position: -4.5 }] },
 			{ type: 'focus', rect: { x: 10, y: 20, width: 30, height: 40 } },
 			{ type: 'focus', rect: undefined },
 			{ type: 'focus', rect: undefined },
+			{ type: 'viewport', viewport: { ...viewport, programmatic: false, visualX: 40, visualY: 30.5, visualScale: 2 } },
+			{ type: 'zoom', x: 100, y: 50.5, factor: 1.2 },
+			{ type: 'pan', x: 100, y: 50, dx: -12, dy: 3.5 },
 		]);
 	});
 
@@ -47,6 +53,8 @@ suite('JeffDesign - designOverlay', () => {
 			JSON.stringify({ type: 'guides', guides: [{ id: 'g1', axis: 'x', position: null }] }),
 			JSON.stringify({ type: 'guides', guides: 'all' }),
 			JSON.stringify({ type: 'focus', rect: { x: 1, y: 2, width: -3, height: 4 } }),
+			JSON.stringify({ type: 'zoom', x: 1, y: 2, factor: 0 }),
+			JSON.stringify({ type: 'pan', x: 1, y: 2, dx: 'left', dy: 0 }),
 			JSON.stringify({ type: 'guides', guides: Array.from({ length: 501 }, (_, i) => ({ id: `g${i}`, axis: 'x', position: i })) }),
 		];
 		assert.deepStrictEqual(payloads.map(payload => parseDesignOverlayNotification(payload)), payloads.map(() => undefined));

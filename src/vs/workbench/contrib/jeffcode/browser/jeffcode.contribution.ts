@@ -4,6 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
+import { ClaudeCodeGroupSizeContribution } from './claudeCodeGroupSize.js';
 import { ClaudeCodeOnboardingContribution } from './claudeCodeOnboarding.js';
 
 registerWorkbenchContribution2(ClaudeCodeOnboardingContribution.ID, ClaudeCodeOnboardingContribution, WorkbenchPhase.Eventually);
+registerWorkbenchContribution2(ClaudeCodeGroupSizeContribution.ID, ClaudeCodeGroupSizeContribution, WorkbenchPhase.AfterRestored);

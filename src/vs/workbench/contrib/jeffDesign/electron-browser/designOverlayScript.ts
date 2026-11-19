@@ -226,13 +226,17 @@ export function designOverlayMain(config: IDesignOverlayScriptConfig): void {
 	const maxSiblings = 1000;
 	const maxCanvasPixels = 16_000_000;
 	const hostTag = 'jeff-design-overlay';
+	/** The layer that takes the pointer while the user moves around with Zoom and Pan. */
+	const panShieldTag = 'jeff-design-pan';
+	/** Zoom factor per pixel of wheel delta, like Figma: one notch of a mouse wheel zooms by about 20%. */
+	const zoomPerPixel = 0.002;
 	const skippedTags = new Set(['script', 'style', 'link', 'meta', 'head', 'title', 'noscript', 'template', 'br', 'wbr']);
 	const measureCategories: readonly DesignMeasureCategory[] = ['gap', 'padding', 'margin', 'components', 'typography'];
 
 	// -- State --------------------------------------------------------------------------------
 
 	let destroyed = false;
-	let state: IDesignOverlayState = { rulers: false, guides: [], measure: false, categories: [], cover: undefined, reportViewport: false };
+	let state: IDesignOverlayState = { rulers: false, guides: [], measure: false, categories: [], cover: undefined, reportViewport: false, zoom: false };
 	let guides: IOverlayGuide[] = [];
 	let draftAxis: DesignGuideAxis | undefined;
 	let draftPosition: number | undefined;
@@ -254,6 +258,14 @@ export function designOverlayMain(config: IDesignOverlayScriptConfig): void {
 	let hoverGuideId: string | undefined;
 	let measurementHits: IOverlayMeasurementHit[] = [];
 	let focusRect: IDesignOverlayRect | undefined;
+
+	/** Zoom and Pan: Space is held, so a drag moves around in the page instead of reaching it. */
+	let spaceHeld = false;
+	/** Zoom and Pan: the drag moving around in the page, with the last pointer position in screen px. */
+	let pan: { readonly pointerId: number; screenX: number; screenY: number } | undefined;
+	let panShield: HTMLElement | undefined;
+	/** Zoom and Pan: the workbench is pinching the page; see {@link IDesignOverlayPageApi.setPinching}. */
+	let pinching = false;
 
 	/** The host may only be added once the page is loaded, so that it never meets a hydration. */
 	let hostAllowed = false;
@@ -409,6 +421,9 @@ export function designOverlayMain(config: IDesignOverlayScriptConfig): void {
 			documentWidth: scroller ? scroller.scrollWidth : size.width,
 			documentHeight: scroller ? scroller.scrollHeight : size.height,
 			programmatic: win.performance.now() < programmaticUntil,
+			visualX: win.visualViewport?.offsetLeft ?? 0,
+			visualY: win.visualViewport?.offsetTop ?? 0,
+			visualScale: win.visualViewport?.scale ?? 1,
 		};
 	};
 
@@ -1255,7 +1270,7 @@ export function designOverlayMain(config: IDesignOverlayScriptConfig): void {
 	// -- Pointer and keyboard handlers ----------------------------------------------------------
 
 	const onPointerMove = (event: PointerEvent): void => {
-		if (!event.isPrimary) {
+		if (!event.isPrimary || takenByZoom(event)) {
 			return;
 		}
 		pointerX = event.clientX;
@@ -1294,6 +1309,9 @@ export function designOverlayMain(config: IDesignOverlayScriptConfig): void {
 	};
 
 	const onPointerDown = (event: PointerEvent): void => {
+		if (takenByZoom(event)) {
+			return;
+		}
 		if (state.measure) {
 			block(event);
 			if (event.button === 0 && event.isPrimary && !drag) {
@@ -1321,7 +1339,7 @@ export function designOverlayMain(config: IDesignOverlayScriptConfig): void {
 	};
 
 	const onPointerUp = (event: PointerEvent): void => {
-		if (!event.isPrimary) {
+		if (!event.isPrimary || takenByZoom(event)) {
 			return;
 		}
 		pointerX = event.clientX;
@@ -1427,7 +1445,7 @@ export function designOverlayMain(config: IDesignOverlayScriptConfig): void {
 				return false;
 			}
 			const nodes = [...record.addedNodes, ...record.removedNodes];
-			return nodes.length > 0 && nodes.every(node => node === host);
+			return nodes.length > 0 && nodes.every(node => node === host || (node as Element).localName === panShieldTag);
 		};
 		if (records.every(ownRecord)) {
 			return;
@@ -1459,6 +1477,171 @@ export function designOverlayMain(config: IDesignOverlayScriptConfig): void {
 		}
 	};
 
+	// -- Zoom and Pan -------------------------------------------------------------------------
+
+	/** Space+drag or a middle-button drag moves around in the page instead of reaching it. */
+	function takenByZoom(event: PointerEvent): boolean {
+		return state.zoom && (spaceHeld || pan !== undefined || event.button === 1);
+	}
+
+	/** A point of the page relative to its visible part, as the workbench zooms and pans. */
+	const visualPoint = (clientX: number, clientY: number): { readonly x: number; readonly y: number } => ({
+		x: clientX - (win.visualViewport?.offsetLeft ?? 0),
+		y: clientY - (win.visualViewport?.offsetTop ?? 0),
+	});
+
+	/** Shows the layer that takes the pointer while Space is held or a pan is under way. */
+	const updatePanShield = (): void => {
+		const needed = state.zoom && (spaceHeld || pan !== undefined);
+		if (!needed) {
+			panShield?.remove();
+			panShield = undefined;
+			return;
+		}
+		const root = win.document.documentElement;
+		if (!panShield && root) {
+			const element = win.document.createElement(panShieldTag);
+			setStyles(element, [
+				['all', 'initial'],
+				['position', 'fixed'],
+				['top', '0'],
+				['left', '0'],
+				['right', '0'],
+				['bottom', '0'],
+				['z-index', '2147483647'],
+				['display', 'block'],
+				['pointer-events', 'auto'],
+				['background', 'transparent'],
+				['touch-action', 'none'],
+				['user-select', 'none'],
+			]);
+			root.appendChild(element);
+			panShield = element;
+		}
+		// Above the cursor sheet of the Measure tool: an inline declaration wins over a style sheet.
+		panShield?.style.setProperty('cursor', pan ? 'grabbing' : 'grab', 'important');
+	};
+
+	const endPan = (): void => {
+		if (pan) {
+			const shield = panShield;
+			if (shield?.hasPointerCapture(pan.pointerId)) {
+				shield.releasePointerCapture(pan.pointerId);
+			}
+			pan = undefined;
+		}
+		updatePanShield();
+	};
+
+	const onZoomWheel = (event: WheelEvent): void => {
+		if (pinching) {
+			// The Ctrl+wheel event of the pinch the workbench sends: it zooms the page in.
+			return;
+		}
+		if (event.ctrlKey || event.metaKey) {
+			// Zoom in at the pointer instead of zooming the whole page (which would change its layout).
+			block(event);
+			const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
+			const factor = clamp(Math.exp(-event.deltaY * unit * zoomPerPixel), 0.5, 2);
+			const point = visualPoint(event.clientX, event.clientY);
+			notify({ type: 'zoom', x: point.x, y: point.y, factor });
+		} else if (panShield && event.target === panShield) {
+			// The wheel events the workbench sends to move around: the page's handlers must not see them.
+			event.stopImmediatePropagation();
+		}
+	};
+
+	const isSpace = (event: KeyboardEvent): boolean => event.code === 'Space' || event.key === ' ';
+
+	const onZoomKeyDown = (event: KeyboardEvent): void => {
+		if (event.ctrlKey || event.metaKey || event.altKey || isEditableFocused()) {
+			return;
+		}
+		if (isSpace(event)) {
+			// Held, like in Figma: the page neither scrolls nor gets the key.
+			block(event);
+			if (!spaceHeld) {
+				spaceHeld = true;
+				updatePanShield();
+			}
+		} else if (event.shiftKey && event.code === 'Digit0') {
+			// Shift+0: back to 100%, like in Figma.
+			block(event);
+			const scale = win.visualViewport?.scale ?? 1;
+			if (scale !== 1) {
+				notify({ type: 'zoom', x: 0, y: 0, factor: 1 / scale });
+			}
+		}
+	};
+
+	const onZoomKeyUp = (event: KeyboardEvent): void => {
+		if (spaceHeld && isSpace(event)) {
+			block(event);
+			spaceHeld = false;
+			if (!pan) {
+				updatePanShield();
+			}
+		}
+	};
+
+	const onZoomPointerDown = (event: PointerEvent): void => {
+		if (!takenByZoom(event)) {
+			return;
+		}
+		block(event);
+		if (pan || (event.button !== 0 && event.button !== 1)) {
+			return;
+		}
+		pan = { pointerId: event.pointerId, screenX: event.screenX, screenY: event.screenY };
+		updatePanShield();
+		try {
+			// The drag keeps moving the page when the pointer leaves it.
+			panShield?.setPointerCapture(event.pointerId);
+		} catch {
+			// The pointer is already gone.
+		}
+	};
+
+	const onZoomPointerMove = (event: PointerEvent): void => {
+		if (!pan || event.pointerId !== pan.pointerId) {
+			return;
+		}
+		event.stopImmediatePropagation();
+		if ((event.buttons & 5) === 0) {
+			// The button was released where the page could not see it.
+			endPan();
+			return;
+		}
+		// Screen px: the page follows the pointer whatever the zoom.
+		const dx = event.screenX - pan.screenX;
+		const dy = event.screenY - pan.screenY;
+		pan.screenX = event.screenX;
+		pan.screenY = event.screenY;
+		if (dx !== 0 || dy !== 0) {
+			const point = visualPoint(event.clientX, event.clientY);
+			notify({ type: 'pan', x: point.x, y: point.y, dx, dy });
+		}
+	};
+
+	const onZoomPointerUp = (event: PointerEvent): void => {
+		if (pan && event.pointerId === pan.pointerId) {
+			block(event);
+			endPan();
+		}
+	};
+
+	const onZoomBlur = (): void => {
+		spaceHeld = false;
+		endPan();
+	};
+
+	/** While moving around, the page gets no click, selection or context menu. */
+	const onZoomBlock = (event: Event): void => {
+		if (spaceHeld || pan || (event instanceof win.MouseEvent && event.button === 1)) {
+			block(event);
+		}
+	};
+
 	// -- Listener groups ----------------------------------------------------------------------
 
 	const addPointerListeners = (): (() => void)[] => [
@@ -1481,6 +1664,29 @@ export function designOverlayMain(config: IDesignOverlayScriptConfig): void {
 		listen<Event>(win, 'scroll', onScroll, { capture: true, passive: true }),
 		listen<UIEvent>(win, 'resize', onResize, { passive: true }),
 	];
+
+	const addZoomListeners = (): (() => void)[] => [
+		// Not passive: the page would otherwise zoom itself in.
+		listen<WheelEvent>(win, 'wheel', onZoomWheel, { capture: true, passive: false }),
+		listen<KeyboardEvent>(win, 'keydown', onZoomKeyDown, { capture: true }),
+		listen<KeyboardEvent>(win, 'keyup', onZoomKeyUp, { capture: true }),
+		listen<PointerEvent>(win, 'pointerdown', onZoomPointerDown, { capture: true }),
+		listen<PointerEvent>(win, 'pointermove', onZoomPointerMove, { capture: true }),
+		listen<PointerEvent>(win, 'pointerup', onZoomPointerUp, { capture: true }),
+		listen<PointerEvent>(win, 'pointercancel', onZoomPointerUp, { capture: true }),
+		listen<FocusEvent>(win, 'blur', onZoomBlur, { passive: true }),
+		...['mousedown', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu', 'dragstart', 'selectstart']
+			.map(type => listen<Event>(win, type, onZoomBlock, { capture: true })),
+	];
+
+	/** The part of the page shown when it is zoomed in moves without the page scrolling. */
+	const addVisualViewportListeners = (): (() => void)[] => {
+		const visualViewport = win.visualViewport;
+		if (!visualViewport) {
+			return [];
+		}
+		return ['scroll', 'resize'].map(type => listen<Event>(visualViewport, type, onResize, { passive: true }));
+	};
 
 	const addInputListeners = (): (() => void)[] =>
 		['wheel', 'keydown', 'pointerdown', 'touchstart'].map(type => listen<Event>(win, type, onUserInput, { capture: true, passive: true }));
@@ -2127,6 +2333,12 @@ export function designOverlayMain(config: IDesignOverlayScriptConfig): void {
 		setListeners('block', state.measure, addBlockingListeners);
 		setListeners('layout', needHost || state.reportViewport, addLayoutListeners);
 		setListeners('input', state.reportViewport, addInputListeners);
+		setListeners('visualViewport', state.reportViewport, addVisualViewportListeners);
+		setListeners('zoom', state.zoom, addZoomListeners);
+		if (!state.zoom) {
+			spaceHeld = false;
+			endPan();
+		}
 
 		if (state.measure && !mutationObserver) {
 			mutationObserver = new win.MutationObserver(records => {
@@ -2196,7 +2408,7 @@ export function designOverlayMain(config: IDesignOverlayScriptConfig): void {
 				foreground: typeof rawCover.foreground === 'string' ? rawCover.foreground : '#CCCCCC',
 			};
 		}
-		return { rulers: input.rulers === true, guides: guideList, measure: input.measure === true, categories, cover, reportViewport: input.reportViewport === true };
+		return { rulers: input.rulers === true, guides: guideList, measure: input.measure === true, categories, cover, reportViewport: input.reportViewport === true, zoom: input.zoom === true };
 	};
 
 	/** Applies a whole state, as sent by the workbench or changed locally. */
@@ -2277,6 +2489,10 @@ export function designOverlayMain(config: IDesignOverlayScriptConfig): void {
 		resizeObserver = undefined;
 		host?.remove();
 		host = undefined;
+		panShield?.remove();
+		panShield = undefined;
+		pan = undefined;
+		spaceHeld = false;
 		canvas = undefined;
 		context = undefined;
 		coverElement = undefined;
@@ -2329,6 +2545,9 @@ export function designOverlayMain(config: IDesignOverlayScriptConfig): void {
 			syncFeatures();
 		}),
 		commitDraftGuide: () => guard(commitDraft),
+		setPinching: value => guard(() => {
+			pinching = value === true;
+		}),
 		clearMeasurements: () => guard(() => {
 			measurements = [];
 			hoverMeasurementId = undefined;
@@ -2348,7 +2567,7 @@ export function designOverlayMain(config: IDesignOverlayScriptConfig): void {
 			try {
 				return readViewport();
 			} catch {
-				return { scrollX: 0, scrollY: 0, innerWidth: 0, innerHeight: 0, clientWidth: 0, clientHeight: 0, documentWidth: 0, documentHeight: 0, programmatic: false };
+				return { scrollX: 0, scrollY: 0, innerWidth: 0, innerHeight: 0, clientWidth: 0, clientHeight: 0, documentWidth: 0, documentHeight: 0, programmatic: false, visualX: 0, visualY: 0, visualScale: 1 };
 			}
 		},
 		destroy: () => {

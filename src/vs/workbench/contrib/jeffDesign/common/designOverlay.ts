@@ -20,7 +20,7 @@ export const DESIGN_OVERLAY_BINDING = '__jeffcodeDesignOverlayNotify';
 export const DESIGN_OVERLAY_GLOBAL_KEY = 'jeffcode.designOverlay';
 
 /** Bumped when the page API changes, so a page still holding an older overlay gets the new one. */
-export const DESIGN_OVERLAY_VERSION = 1;
+export const DESIGN_OVERLAY_VERSION = 2;
 
 /** Configuration passed to the overlay script when it is installed in a page. */
 export interface IDesignOverlayScriptConfig {
@@ -71,6 +71,12 @@ export interface IDesignOverlayState {
 	readonly cover: IDesignOverlayCover | undefined;
 	/** Send `viewport` notifications when the page scrolls or resizes. */
 	readonly reportViewport: boolean;
+	/**
+	 * Zoom and pan, like a Figma canvas: Ctrl/Cmd+wheel zooms the page in at the pointer and
+	 * Space+drag moves around in it. The page reports what the user does (`zoom`, `pan`) and the
+	 * workbench zooms the page as a pinch would, so its layout never changes.
+	 */
+	readonly zoom: boolean;
 }
 
 export const EMPTY_DESIGN_OVERLAY_STATE: IDesignOverlayState = {
@@ -80,6 +86,7 @@ export const EMPTY_DESIGN_OVERLAY_STATE: IDesignOverlayState = {
 	categories: DEFAULT_MEASURE_CATEGORIES,
 	cover: undefined,
 	reportViewport: false,
+	zoom: false,
 };
 
 /** Scroll position and size of the page, in CSS px of the page. */
@@ -97,6 +104,11 @@ export interface IDesignOverlayViewport {
 	readonly documentHeight: number;
 	/** True when this scroll was caused by {@link IDesignOverlayPageApi.scrollTo}. */
 	readonly programmatic: boolean;
+	/** `visualViewport.offsetLeft` / `offsetTop`: the part of the page shown when zoomed in. */
+	readonly visualX: number;
+	readonly visualY: number;
+	/** `visualViewport.scale`: 1 unless the page is zoomed in (pinch or Zoom and Pan). */
+	readonly visualScale: number;
 }
 
 /** A rectangle in CSS px of the page document. */
@@ -116,7 +128,14 @@ export type DesignOverlayNotification =
 	/** The user pressed Escape in the Measure tool. */
 	| { readonly type: 'measureExit' }
 	/** The element hovered with the Measure tool, for the rulers to highlight; `undefined` when none. */
-	| { readonly type: 'focus'; readonly rect: IDesignOverlayRect | undefined };
+	| { readonly type: 'focus'; readonly rect: IDesignOverlayRect | undefined }
+	/**
+	 * Zoom and Pan: zoom by `factor` keeping the point (`x`, `y`) in place. The point is in CSS px
+	 * of the visible part of the page (relative to the visual viewport).
+	 */
+	| { readonly type: 'zoom'; readonly x: number; readonly y: number; readonly factor: number }
+	/** Zoom and Pan: move the page by (`dx`, `dy`) screen px; (`x`, `y`) is the pointer, as for `zoom`. */
+	| { readonly type: 'pan'; readonly x: number; readonly y: number; readonly dx: number; readonly dy: number };
 
 /** One annotation computed by the overlay, in CSS px of the page document. Used by tests. */
 export interface IDesignOverlayDebugAnnotation {
@@ -144,6 +163,11 @@ export interface IDesignOverlayPageApi {
 	commitDraftGuide(): void;
 	/** Removes the measurements the user placed with the Measure tool. */
 	clearMeasurements(): void;
+	/**
+	 * Zoom and Pan: the workbench is pinching the page. A pinch sends the page a Ctrl+wheel event,
+	 * which the overlay must then let through instead of turning it into another zoom.
+	 */
+	setPinching(pinching: boolean): void;
 	/** Scrolls the window; the resulting `viewport` notification has `programmatic: true`. */
 	scrollTo(x: number, y: number): void;
 	getViewport(): IDesignOverlayViewport;
@@ -194,6 +218,7 @@ function parseViewport(value: unknown): IDesignOverlayViewport | undefined {
 			return undefined;
 		}
 	}
+	const optionalNumber = (key: string, fallback: number): number => isFiniteNumber(value[key]) ? value[key] as number : fallback;
 	return {
 		scrollX: value.scrollX as number,
 		scrollY: value.scrollY as number,
@@ -204,6 +229,9 @@ function parseViewport(value: unknown): IDesignOverlayViewport | undefined {
 		documentWidth: value.documentWidth as number,
 		documentHeight: value.documentHeight as number,
 		programmatic: value.programmatic === true,
+		visualX: optionalNumber('visualX', 0),
+		visualY: optionalNumber('visualY', 0),
+		visualScale: Math.max(0.01, optionalNumber('visualScale', 1)),
 	};
 }
 
@@ -229,6 +257,14 @@ export function parseDesignOverlayNotification(payload: string): DesignOverlayNo
 			return { type: 'ready' };
 		case 'measureExit':
 			return { type: 'measureExit' };
+		case 'zoom': {
+			const { x, y, factor } = value;
+			return isFiniteNumber(x) && isFiniteNumber(y) && isFiniteNumber(factor) && factor > 0 ? { type: 'zoom', x, y, factor } : undefined;
+		}
+		case 'pan': {
+			const { x, y, dx, dy } = value;
+			return isFiniteNumber(x) && isFiniteNumber(y) && isFiniteNumber(dx) && isFiniteNumber(dy) ? { type: 'pan', x, y, dx, dy } : undefined;
+		}
 		case 'viewport': {
 			const viewport = parseViewport(value.viewport);
 			return viewport ? { type: 'viewport', viewport } : undefined;

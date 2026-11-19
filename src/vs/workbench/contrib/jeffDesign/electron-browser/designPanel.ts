@@ -109,7 +109,7 @@ export class DesignPanel extends Disposable {
 		const actions = append(footer, $('.jeff-design-footer-actions'));
 		this._footerButton(actions, 'Reset', 'Undo all changes in the page', false, () => _inspector.resetAll());
 		this._footerButton(actions, 'Copy CSS', 'Copy the changes as CSS', false, button => this._copyCss(button));
-		this._footerButton(actions, 'Apply', 'Send the changes to Claude Code to apply them to the source code', true, () => this._apply());
+		this._footerButton(actions, 'Send to Claude', 'Write the changes into a new Claude Code conversation, which applies them to the source code once you send it', true, () => this._apply());
 
 		this._register(_inspector.onDidChangeSelection(() => this._updateSelection()));
 		this._register(_inspector.onDidChangeStyles(() => this._updateStyles()));

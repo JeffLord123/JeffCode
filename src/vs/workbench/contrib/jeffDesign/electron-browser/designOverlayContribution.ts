@@ -6,7 +6,7 @@
 import { Codicon } from '../../../../base/common/codicons.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
-import { ILocalizedString, localize2 } from '../../../../nls.js';
+import { ILocalizedString, localize, localize2 } from '../../../../nls.js';
 import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr, IContextKey, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
@@ -17,7 +17,7 @@ import { BROWSER_EDITOR_ACTIVE, BrowserActionCategory, BrowserEditor, BrowserEdi
 import { ALL_MEASURE_CATEGORIES, DesignMeasureCategory } from '../common/designOverlay.js';
 import { DesignPageOverlay, IDesignOverlayService } from './designPageOverlay.js';
 import { DESIGN_RULER_SIZE, DesignRulers } from './designRulers.js';
-import { CONTEXT_DESIGN_MEASURE, CONTEXT_DESIGN_MEASURE_CATEGORIES, CONTEXT_DESIGN_RULERS, DESIGN_PAGE_PRECONDITION, DESIGN_TOOLBAR_GROUP, DesignToolbarOrder, JeffDesignMeasureMenu } from './designToolbar.js';
+import { CONTEXT_DESIGN_MEASURE, CONTEXT_DESIGN_MEASURE_CATEGORIES, CONTEXT_DESIGN_RULERS, CONTEXT_DESIGN_ZOOM, DESIGN_PAGE_PRECONDITION, DESIGN_TOOLBAR_GROUP, DesignToolbarOrder, JeffDesignMeasureMenu } from './designToolbar.js';
 
 /**
  * The rulers and the Measure tool of one integrated browser editor. What is drawn over the page
@@ -28,6 +28,7 @@ export class BrowserEditorOverlayContribution extends BrowserEditorContribution 
 
 	private readonly _rulersKey: IContextKey<boolean>;
 	private readonly _measureKey: IContextKey<boolean>;
+	private readonly _zoomKey: IContextKey<boolean>;
 	private readonly _rulers: DesignRulers;
 	private _overlay: DesignPageOverlay | undefined;
 	private _container: HTMLElement | undefined;
@@ -43,6 +44,7 @@ export class BrowserEditorOverlayContribution extends BrowserEditorContribution 
 		super(editor);
 		this._rulersKey = CONTEXT_DESIGN_RULERS.bindTo(contextKeyService);
 		this._measureKey = CONTEXT_DESIGN_MEASURE.bindTo(contextKeyService);
+		this._zoomKey = CONTEXT_DESIGN_ZOOM.bindTo(contextKeyService);
 		this._rulers = this._register(instantiationService.createInstance(DesignRulers));
 	}
 
@@ -92,6 +94,15 @@ export class BrowserEditorOverlayContribution extends BrowserEditorContribution 
 		this._overlay?.clearMeasurements();
 	}
 
+	toggleZoom(): void {
+		const zoom = !this._overlay?.state.zoom;
+		this._overlay?.setZoom(zoom);
+		if (zoom) {
+			// The page needs the keyboard for Space+drag; the toolbar button would take Space as a click.
+			this.editor.ensureBrowserFocus();
+		}
+	}
+
 	private _setOverlay(overlay: DesignPageOverlay | undefined): void {
 		this._overlay = overlay;
 		this._rulers.setOverlay(overlay);
@@ -103,6 +114,7 @@ export class BrowserEditorOverlayContribution extends BrowserEditorContribution 
 		const rulers = !!state?.rulers;
 		this._rulersKey.set(rulers);
 		this._measureKey.set(!!state?.measure);
+		this._zoomKey.set(!!state?.zoom);
 		this._rulers.setVisible(rulers);
 		if (rulers !== this._rulersShown) {
 			this._rulersShown = rulers;
@@ -272,7 +284,39 @@ class ClearMeasurementsAction extends Action2 {
 	}
 }
 
+/**
+ * Zoom and Pan, like a Figma canvas: Ctrl/Cmd+wheel zooms in at the pointer (the layout of the page
+ * does not change), Space+drag or a middle-button drag moves around, Shift+0 goes back to 100%.
+ * Works with the rulers and the Measure tool, whose annotations are zoomed with the page.
+ */
+class ToggleZoomAction extends Action2 {
+	static readonly ID = 'jeffcode.design.toggleZoom';
+
+	constructor() {
+		super({
+			id: ToggleZoomAction.ID,
+			title: localize2('jeffDesign.toggleZoom', "Zoom and Pan"),
+			tooltip: localize('jeffDesign.toggleZoomTooltip', "Zoom and Pan: Ctrl/Cmd+Wheel to Zoom, Space+Drag to Move, Shift+0 for 100%"),
+			category: BrowserActionCategory,
+			icon: Codicon.zoomIn,
+			f1: true,
+			precondition: DESIGN_PAGE_PRECONDITION,
+			toggled: ContextKeyExpr.equals(CONTEXT_DESIGN_ZOOM.key, true),
+			menu: {
+				id: MenuId.BrowserActionsToolbar,
+				group: DESIGN_TOOLBAR_GROUP,
+				order: DesignToolbarOrder.Zoom,
+			},
+		});
+	}
+
+	run(accessor: ServicesAccessor, browserEditor?: unknown): void {
+		getOverlayContribution(accessor, browserEditor)?.toggleZoom();
+	}
+}
+
 registerAction2(ToggleRulersAction);
+registerAction2(ToggleZoomAction);
 registerAction2(ToggleMeasureAction);
 registerAction2(ExitMeasureAction);
 ALL_MEASURE_CATEGORIES.forEach((category, index) => registerMeasureCategoryAction(category, index));

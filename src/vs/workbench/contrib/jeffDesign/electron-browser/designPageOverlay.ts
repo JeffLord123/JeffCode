@@ -60,6 +60,22 @@ interface IEvaluateResponse {
 /** Attempts to reconnect after the page's debugging session closed while a feature was on. */
 const maxReconnectAttempts = 5;
 
+/** A zoom or a move asked by the page with Zoom and Pan, in CSS px of the visible part of the page. */
+interface IPendingZoomInput {
+	readonly x: number;
+	readonly y: number;
+	/** For a zoom, the factor; for a move, the distance in screen px. */
+	readonly factor: number;
+	readonly dx: number;
+	readonly dy: number;
+}
+
+/**
+ * Speed of the pinch that zooms the page, in px per second: fast enough to finish in a frame or two.
+ * A pinch rather than a page zoom, so the layout of the page does not change.
+ */
+const zoomPinchSpeed = 100_000;
+
 /**
  * The design overlay of one integrated browser page: ruler guides, the Measure tool and the
  * mirror placeholder are drawn by a script injected in the page (see `designOverlayScript.ts`),
@@ -81,6 +97,12 @@ export class DesignPageOverlay extends Disposable {
 	private readonly _reconnect = this._register(new RunOnceScheduler(() => this._schedulePush(), 750));
 
 	private _draft: { readonly axis: DesignGuideAxis; readonly position: number | null } | undefined;
+
+	/** Zooms and moves asked by the page, merged while one is being sent. */
+	private _pendingZoom: IPendingZoomInput | undefined;
+	private _pendingPan: IPendingZoomInput | undefined;
+	private _sendingZoomInput = false;
+	private _zoomReset: Promise<void> | undefined;
 	private _draftQueued = false;
 	/** Draft guide positions and commits are sent in order, one at a time. */
 	private _draftChain: Promise<void> = Promise.resolve();
@@ -134,6 +156,14 @@ export class DesignPageOverlay extends Disposable {
 
 	setCover(cover: IDesignOverlayCover | undefined): void {
 		this._update({ cover });
+	}
+
+	setZoom(zoom: boolean): void {
+		if (!zoom && this._state.zoom) {
+			// Leaving Zoom and Pan shows the page at 100% again, before the page's session may close.
+			this._zoomReset = this._resetZoom();
+		}
+		this._update({ zoom });
 	}
 
 	/** Asks the page to report its scroll position and size until the returned disposable is disposed. */
@@ -190,7 +220,7 @@ export class DesignPageOverlay extends Disposable {
 
 	private get _active(): boolean {
 		const state = this._state;
-		return state.rulers || state.measure || !!state.cover || this._viewportTrackers > 0;
+		return state.rulers || state.measure || state.zoom || !!state.cover || this._viewportTrackers > 0;
 	}
 
 	// -- Pushing the state to the page ---------------------------------------------------------
@@ -211,6 +241,7 @@ export class DesignPageOverlay extends Disposable {
 				if (this._active) {
 					await this._pushState();
 				} else if (this._session) {
+					await this._zoomReset;
 					await this._call('destroy', []);
 					this._disconnect();
 				}
@@ -368,6 +399,84 @@ export class DesignPageOverlay extends Disposable {
 					this._onDidChangeFocusRect.fire(notification.rect);
 				}
 				break;
+			case 'zoom': {
+				const previous = this._pendingZoom;
+				this._pendingZoom = { x: notification.x, y: notification.y, factor: (previous?.factor ?? 1) * notification.factor, dx: 0, dy: 0 };
+				void this._sendZoomInput();
+				break;
+			}
+			case 'pan': {
+				const previous = this._pendingPan;
+				this._pendingPan = { x: notification.x, y: notification.y, factor: 1, dx: (previous?.dx ?? 0) + notification.dx, dy: (previous?.dy ?? 0) + notification.dy };
+				void this._sendZoomInput();
+				break;
+			}
+		}
+	}
+
+	private async _resetZoom(): Promise<void> {
+		this._pendingZoom = this._pendingPan = undefined;
+		const session = this._session;
+		if (!session || session.closed) {
+			return;
+		}
+		try {
+			const response = await session.send<IEvaluateResponse>('Runtime.evaluate', { expression: 'globalThis.visualViewport ? globalThis.visualViewport.scale : 1', returnByValue: true });
+			const scale = response.result?.value;
+			if (typeof scale === 'number' && scale > 1.001) {
+				await this._pinch(session, 0, 0, 1 / scale);
+			}
+		} catch (error) {
+			this._logService.debug('[JeffDesign] resetting the zoom failed', error);
+		}
+	}
+
+	/** Pinches the page at (`x`, `y`), in CSS px of its visible part, as a touchpad would. */
+	private async _pinch(session: DesignCdpSession, x: number, y: number, factor: number): Promise<void> {
+		// A touchpad pinch sends the page a Ctrl+wheel event, which the overlay must let through.
+		await this._call('setPinching', [true]);
+		try {
+			await session.send('Input.synthesizePinchGesture', { x, y, scaleFactor: factor, relativeSpeed: zoomPinchSpeed, gestureSourceType: 'mouse' });
+		} finally {
+			await this._call('setPinching', [false]);
+		}
+	}
+
+	/**
+	 * Zooms the page as a pinch of the touchpad would, at the pointer, and moves around in it as the
+	 * wheel would. The page cannot do either itself: a script can neither zoom a page in without
+	 * changing its layout nor move the visible part of a zoomed-in page.
+	 */
+	private async _sendZoomInput(): Promise<void> {
+		if (this._sendingZoomInput) {
+			return;
+		}
+		this._sendingZoomInput = true;
+		try {
+			while (this._pendingZoom || this._pendingPan) {
+				const session = this._session;
+				if (!session || session.closed) {
+					this._pendingZoom = this._pendingPan = undefined;
+					return;
+				}
+				const zoom = this._pendingZoom;
+				const pan = this._pendingPan;
+				this._pendingZoom = this._pendingPan = undefined;
+				try {
+					if (zoom && Math.abs(zoom.factor - 1) > 0.001) {
+						await this._pinch(session, zoom.x, zoom.y, zoom.factor);
+					}
+					if (pan) {
+						// Over the layer the page shows while moving around, so the page itself scrolls,
+						// never an element under the pointer.
+						await session.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: pan.x, y: pan.y, deltaX: -pan.dx, deltaY: -pan.dy });
+					}
+				} catch (error) {
+					this._logService.debug('[JeffDesign] zooming the page failed', error);
+				}
+			}
+		} finally {
+			this._sendingZoomInput = false;
 		}
 	}
 

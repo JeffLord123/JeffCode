@@ -25,6 +25,12 @@ import { logBrowserOpen } from '../common/browserViewTelemetry.js';
 import { BrowserViewReportedFocus } from '../common/browserViewFocus.js';
 import { URI } from '../../../base/common/uri.js';
 
+/**
+ * Largest pinch-to-zoom factor. JeffCode: 8 rather than 3, so the Zoom and Pan design tool, which
+ * zooms pages in as a pinch would, can show small gaps and paddings up close.
+ */
+const maxVisualZoom = 8;
+
 enum NewPageLocation {
 	Foreground = 'foreground',
 	Background = 'background',
@@ -480,7 +486,7 @@ export class BrowserView extends Disposable {
 			this._view.webContents.setZoomFactor(browserZoomFactors[this._browserZoomIndex]);
 
 			// Enable pinch-to-zoom
-			void this._view.webContents.setVisualZoomLevelLimits(1, 3).catch(error => {
+			void this._view.webContents.setVisualZoomLevelLimits(1, maxVisualZoom).catch(error => {
 				this.logService.error('Failed to set visual zoom level limits for browser view webContents.', error);
 			});
 		});
@@ -973,7 +979,7 @@ export class BrowserView extends Disposable {
 			// disables pinch-to-zoom until the next navigation. Re-enable it so
 			// the user can still pinch-to-zoom even immediately after
 			// capturing a full-page screenshot.
-			void this._view.webContents.setVisualZoomLevelLimits(1, 3).catch(error => {
+			void this._view.webContents.setVisualZoomLevelLimits(1, maxVisualZoom).catch(error => {
 				this.logService.error('Failed to restore visual zoom level limits after full-page screenshot.', error);
 			});
 		}

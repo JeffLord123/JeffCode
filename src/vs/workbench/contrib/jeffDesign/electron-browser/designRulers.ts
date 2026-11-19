@@ -64,6 +64,8 @@ interface IRulerContent {
 	readonly draft: number | undefined;
 	/** Extent of the element hovered with the Measure tool. */
 	readonly focus: { readonly start: number; readonly end: number } | undefined;
+	/** Label of the size of the page along the ruler, written at its far end. */
+	readonly size: string | undefined;
 }
 
 /** Colors of the rulers, read from `designRulers.css`, and the workbench font. */
@@ -251,11 +253,27 @@ class RulerCanvas {
 			}
 		}
 
+		// The size of the page, at the far end of the ruler: right of the top ruler, bottom of the left one.
+		let sizeLabel: IRulerLabel | undefined;
+		if (content.size !== undefined) {
+			const labelWidth = context.measureText(content.size).width;
+			if (labelWidth + 2 * gap <= length) {
+				sizeLabel = { text: content.size, start: length - gap - labelWidth, width: labelWidth, color: style.foreground, anchor: length };
+				// Values of the hovered element or of a guide never run under the size.
+				for (let i = highlights.length - 1; i >= 0; i--) {
+					const end = sizeLabel.start - gap;
+					if (highlights[i].start + highlights[i].width > end) {
+						highlights[i] = { ...highlights[i], start: end - highlights[i].width };
+					}
+				}
+			}
+		}
+
 		// A graduation label is left out when it, or its graduation, meets a highlighted value or the
 		// position that value refers to: a value on a graduation would otherwise be written twice.
 		context.font = font;
 		const clearance = labelClearance * dpr;
-		const isHighlighted = (from: number, to: number) => highlights.some(highlight =>
+		const isHighlighted = (from: number, to: number) => (sizeLabel !== undefined && to > sizeLabel.start - clearance) || highlights.some(highlight =>
 			from < Math.max(highlight.start + highlight.width, highlight.anchor) + clearance
 			&& to > Math.min(highlight.start, highlight.anchor) - clearance);
 		for (const tick of ticks) {
@@ -297,6 +315,12 @@ class RulerCanvas {
 		context.font = strongFont;
 		for (const highlight of highlights) {
 			drawLabel(highlight);
+		}
+		if (sizeLabel) {
+			// Over the graduations and guides it covers.
+			const boxStart = Math.floor(sizeLabel.start - gap);
+			fill(boxStart, 0, length - boxStart, border, style.background);
+			drawLabel(sizeLabel);
 		}
 	}
 }
@@ -420,14 +444,15 @@ export class DesignRulers extends Disposable {
 		}
 	}
 
-	/** Workbench px per page px, and the page's scroll position. */
+	/** Workbench px per page px, and the page position at the top left corner of the page view. */
 	private _mapping(page: IRulersLayout): { readonly scale: number; readonly scrollX: number; readonly scrollY: number } {
 		const viewport = this._overlay?.viewport;
 		if (!viewport) {
 			return { scale: 1, scrollX: 0, scrollY: 0 };
 		}
 		const scale = viewport.innerWidth > 0 && page.width > 0 ? page.width / viewport.innerWidth : 1;
-		return { scale, scrollX: viewport.scrollX, scrollY: viewport.scrollY };
+		// Zoomed in (Zoom and Pan, or a pinch), the view shows a part of the page, larger.
+		return { scale: scale * viewport.visualScale, scrollX: viewport.scrollX + viewport.visualX, scrollY: viewport.scrollY + viewport.visualY };
 	}
 
 	private _onDidChangeGeometry(): void {
@@ -475,6 +500,10 @@ export class DesignRulers extends Disposable {
 			fontFamily: computed.fontFamily || 'sans-serif',
 		};
 		const { scale, scrollX, scrollY } = this._mapping(page);
+		// The size of the page, as the page sees it (`innerWidth` x `innerHeight`).
+		const viewport = this._overlay?.viewport;
+		const width = viewport?.innerWidth ?? page.width;
+		const height = viewport?.innerHeight ?? page.height;
 		const guides = this._overlay?.state.guides ?? [];
 		const focus = this._overlay?.focusRect;
 		const drag = this._drag;
@@ -485,6 +514,7 @@ export class DesignRulers extends Disposable {
 			guides: guidePositions(guides, 'x'),
 			draft: drag?.axis === 'x' ? drag.position : undefined,
 			focus: focus && { start: focus.x, end: focus.x + focus.width },
+			size: localize('jeffDesign.rulerWidth', "W {0}", formatRulerValue(width)),
 		}, style, dpr);
 		this._left.paint({
 			length: page.height,
@@ -493,6 +523,7 @@ export class DesignRulers extends Disposable {
 			guides: guidePositions(guides, 'y'),
 			draft: drag?.axis === 'y' ? drag.position : undefined,
 			focus: focus && { start: focus.y, end: focus.y + focus.height },
+			size: localize('jeffDesign.rulerHeight', "H {0}", formatRulerValue(height)),
 		}, style, dpr);
 	}
 

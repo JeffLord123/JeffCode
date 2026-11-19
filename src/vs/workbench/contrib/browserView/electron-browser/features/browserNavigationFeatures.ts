@@ -418,10 +418,22 @@ class HardReloadAction extends Action2 {
 		super({
 			id: HardReloadAction.ID,
 			title: localize2('browser.hardReloadAction', 'Hard Reload'),
+			tooltip: localize2('browser.hardReloadTooltip', 'Hard Reload (Ignore Cache)'),
 			category: BrowserActionCategory,
-			icon: Codicon.refresh,
+			icon: Codicon.sync,
 			f1: true,
 			precondition: BROWSER_EDITOR_ACTIVE,
+			// JeffCode: a button of its own right of Reload, and an entry in the "More Actions" menu.
+			menu: [{
+				id: MenuId.BrowserNavigationToolbar,
+				group: 'navigation',
+				order: 4,
+			}, {
+				id: MenuId.BrowserActionsToolbar,
+				group: BrowserActionGroup.Tools,
+				order: 0,
+				isHiddenByDefault: true,
+			}],
 			keybinding: {
 				when: CONTEXT_BROWSER_FOCUSED,
 				weight: KeybindingWeight.WorkbenchContrib + 75,

@@ -18,12 +18,12 @@ export const DESIGN_TOOLBAR_GROUP = '3_design';
 
 /** Order of the design tools within {@link DESIGN_TOOLBAR_GROUP}. */
 export const DesignToolbarOrder = {
-	OpenBrowser: 0,
 	Panel: 1,
 	SelectElement: 2,
 	Rulers: 3,
 	Measure: 4,
-	Mirror: 5,
+	Zoom: 5,
+	Mirror: 6,
 } as const;
 
 /** Dropdown of the Measure split button. */
@@ -40,6 +40,9 @@ export const CONTEXT_DESIGN_RULERS = new RawContextKey<boolean>('jeffDesignRuler
 
 /** Bound per browser editor. */
 export const CONTEXT_DESIGN_MEASURE = new RawContextKey<boolean>('jeffDesignMeasure', false, localize('jeffDesign.measureActive', "Whether the Measure tool is active in the current browser view"));
+
+/** Bound per browser editor. */
+export const CONTEXT_DESIGN_ZOOM = new RawContextKey<boolean>('jeffDesignZoom', false, localize('jeffDesign.zoomActive', "Whether Zoom and Pan is active in the current browser view"));
 
 /** Bound globally: one mirror session at a time. */
 export const CONTEXT_DESIGN_MIRROR_ACTIVE = new RawContextKey<boolean>('jeffDesignMirrorActive', false, localize('jeffDesign.mirrorActive', "Whether Mirror Mode compares the last commit with the uncommitted changes"));
